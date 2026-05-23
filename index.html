@@ -247,6 +247,16 @@
                         <div class="loader-container">
                             <div class="loader-spinner"></div>
                         </div>
+                </section>
+
+                <section class="music-section">
+                    <div class="section-header">
+                        <h2>Handpicked Malayalam Specials</h2>
+                    </div>
+                    <div class="horizontal-scroll" id="handpicked-playlists">
+                        <div class="loader-container">
+                            <div class="loader-spinner"></div>
+                        </div>
                     </div>
                 </section>
 
@@ -301,6 +311,18 @@
 
             <!-- Search View -->
             <div id="search-view" class="view-panel hidden">
+                <div class="import-link-container glass-panel" style="margin-bottom: 30px; padding: 20px; border-radius: 16px; display: flex; flex-direction: column; gap: 12px; background: rgba(255, 170, 0, 0.05); border: 1px dashed rgba(255, 170, 0, 0.3);">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <i data-lucide="link" style="color: var(--accent-color); width: 20px; height: 20px;"></i>
+                        <h4 style="margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.1rem; color: #fff;">Import from JioSaavn</h4>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Paste any JioSaavn Song, Album, or Playlist URL to stream it instantly.</p>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="import-url-input" placeholder="https://www.jiosaavn.com/song/... or /album/... or /featured/..." style="flex: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 10px 16px; border-radius: 8px; color: white; font-size: 0.9rem;">
+                        <button id="import-url-btn" style="background: var(--accent-color); color: #000; font-weight: 700; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; transition: var(--transition);">Import</button>
+                    </div>
+                </div>
+
                 <div class="browse-categories-container">
                     <h2 class="search-title">Browse All Categories</h2>
                     <div class="categories-grid">
@@ -352,14 +374,25 @@
                         </div>
                         <div class="horizontal-scroll" id="search-results-playlists"></div>
                     </section>
+
+                    <section class="music-section">
+                        <div class="section-header">
+                            <h2>Artists</h2>
+                        </div>
+                        <div class="horizontal-scroll" id="search-results-artists"></div>
+                    </section>
                 </div>
             </div>
 
             <!-- Playlists View -->
             <div id="playlists-view" class="view-panel hidden">
                 <section class="music-section">
-                    <div class="section-header">
+                    <div class="section-header" style="flex-wrap: wrap; gap: 16px;">
                         <h2>Discover Playlists</h2>
+                        <div class="search-container playlist-search-container" style="position: relative; width: 100%; max-width: 320px; margin-left: auto;">
+                            <i data-lucide="search" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); width: 16px; height: 16px; pointer-events: none;"></i>
+                            <input type="text" id="playlist-search-input" placeholder="Search for playlists on JioSaavn..." style="width: 100%; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 10px 16px 10px 44px; color: white; font-size: 0.9rem; transition: var(--transition);">
+                        </div>
                     </div>
                     <div class="playlists-languages-nav glass-panel">
                         <button class="playlist-nav-btn active" onclick="loadCategoryPlaylists('Malayalam', this)">Malayalam</button>
@@ -371,7 +404,13 @@
                         <button class="playlist-nav-btn" onclick="loadCategoryPlaylists('Devotional', this)">Devotional</button>
                     </div>
                     
-                    <div class="playlists-grid" id="playlists-grid">
+                    <div class="playlists-grid hidden" id="playlists-grid">
+                        <div class="loader-container">
+                            <div class="loader-spinner"></div>
+                        </div>
+                    </div>
+
+                    <div id="all-playlists-feed" class="playlists-feed-container">
                         <div class="loader-container">
                             <div class="loader-spinner"></div>
                         </div>
@@ -460,6 +499,13 @@
 
         <!-- Player Bar -->
         <footer class="player-bar">
+            <!-- Mobile Fullscreen Header -->
+            <div class="mobile-player-header">
+                <button id="minimize-mobile-player" class="btn-icon" title="Minimize"><i data-lucide="chevron-down"></i></button>
+                <span>Now Playing</span>
+                <button id="mobile-eq-btn" class="btn-icon" title="Equalizer"><i data-lucide="sliders-horizontal"></i></button>
+            </div>
+
             <div class="now-playing">
                 <div class="song-info">
                     <img id="current-album-art" src="https://via.placeholder.com/60" alt="Album Art">
@@ -469,6 +515,7 @@
                     </div>
                     <button class="btn-icon" id="player-heart-btn" title="Like Song"><i data-lucide="heart"></i></button>
                 </div>
+                <button class="btn-play-mobile-compact" id="play-pause-btn-mobile" title="Play/Pause"><i data-lucide="play"></i></button>
             </div>
 
             <div class="player-controls">
@@ -494,6 +541,16 @@
                 <input type="range" id="volume-bar" min="0" max="100" value="80">
             </div>
         </footer>
+
+        <!-- Mobile Bottom Navigation Bar -->
+        <nav class="mobile-nav">
+            <ul>
+                <li id="mobile-tab-home" class="active"><i data-lucide="home"></i><span>Home</span></li>
+                <li id="mobile-tab-playlists"><i data-lucide="list-music"></i><span>Playlists</span></li>
+                <li id="mobile-tab-search"><i data-lucide="search"></i><span>Search</span></li>
+                <li id="mobile-tab-library"><i data-lucide="library"></i><span>Library</span></li>
+            </ul>
+        </nav>
 
         <!-- Equalizer Modal -->
         <div id="eq-modal" class="modal fade-in">

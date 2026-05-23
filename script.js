@@ -326,6 +326,24 @@ function switchView(viewId) {
         const libraryTab = document.getElementById('tab-library');
         if (libraryTab) libraryTab.classList.add('active');
     }
+
+    // Update mobile bottom nav highlights
+    document.querySelectorAll('.mobile-nav li').forEach(li => {
+        li.classList.remove('active');
+    });
+    if (viewId === 'home-view') {
+        const tab = document.getElementById('mobile-tab-home');
+        if (tab) tab.classList.add('active');
+    } else if (viewId === 'playlists-view') {
+        const tab = document.getElementById('mobile-tab-playlists');
+        if (tab) tab.classList.add('active');
+    } else if (viewId === 'search-view') {
+        const tab = document.getElementById('mobile-tab-search');
+        if (tab) tab.classList.add('active');
+    } else if (viewId === 'library-view') {
+        const tab = document.getElementById('mobile-tab-library');
+        if (tab) tab.classList.add('active');
+    }
 }
 
 function initNavigation() {
@@ -343,7 +361,7 @@ function initNavigation() {
     if (playlistsTab) {
         playlistsTab.addEventListener('click', () => {
             switchView('playlists-view');
-            loadCategoryPlaylists('Malayalam');
+            showDiscoverPlaylistsFeed();
         });
     }
     if (searchTab) {
@@ -634,7 +652,13 @@ async function openDetailView(type, id) {
     `;
     
     try {
-        const response = await fetch(`${currentApiBase}/${type}s?id=${id}`);
+        let fetchUrl = `${currentApiBase}/${type}s?`;
+        if (id.startsWith('http://') || id.startsWith('https://')) {
+            fetchUrl += `link=${encodeURIComponent(id)}`;
+        } else {
+            fetchUrl += `id=${id}`;
+        }
+        const response = await fetch(fetchUrl);
         const result = await response.json();
         
         if (result && result.success && result.data) {
@@ -817,6 +841,14 @@ function renderDetailTracks(songs) {
 async function performSearch(query) {
     if (!query) return;
     
+    // Check if it is a JioSaavn link and handle importing
+    if (query.trim().startsWith('http://') || query.trim().startsWith('https://')) {
+        if (query.includes('saavn.com') || query.includes('saavn.dev')) {
+            handleJioSaavnImport(query);
+            return;
+        }
+    }
+    
     // Switch to search view and show results container
     switchView('search-view');
     const categoriesContainer = document.querySelector('.browse-categories-container');
@@ -832,6 +864,9 @@ async function performSearch(query) {
         <div class="loader-container"><div class="loader-spinner"></div></div>
     `;
     document.getElementById('search-results-playlists').innerHTML = `
+        <div class="loader-container"><div class="loader-spinner"></div></div>
+    `;
+    document.getElementById('search-results-artists').innerHTML = `
         <div class="loader-container"><div class="loader-spinner"></div></div>
     `;
     
@@ -853,6 +888,10 @@ async function performSearch(query) {
             // Render Playlists
             const playlists = results.playlists?.results || [];
             renderAlbumsOrPlaylists(playlists, document.getElementById('search-results-playlists'), 'playlist');
+            
+            // Render Artists
+            const artists = results.artists?.results || [];
+            renderArtists(artists, document.getElementById('search-results-artists'));
         } else {
             throw new Error("Invalid API response format");
         }
@@ -867,6 +906,9 @@ async function performSearch(query) {
         `;
         document.getElementById('search-results-playlists').innerHTML = `
             <div class="error-state"><p>Failed to load playlists.</p></div>
+        `;
+        document.getElementById('search-results-artists').innerHTML = `
+            <div class="error-state"><p>Failed to load artists.</p></div>
         `;
     }
 }
@@ -977,7 +1019,12 @@ async function loadCategoryPlaylists(category, btn) {
         btn.classList.add('active');
     }
     
+    const feed = document.getElementById('all-playlists-feed');
     const grid = document.getElementById('playlists-grid');
+    
+    if (feed) feed.classList.add('hidden');
+    if (grid) grid.classList.remove('hidden');
+    
     if (!grid) return;
     
     grid.innerHTML = `<div class="loader-container"><div class="loader-spinner"></div></div>`;
@@ -1073,11 +1120,23 @@ window.addEventListener('DOMContentLoaded', async () => {
     // Load Featured Playlists on home page
     loadFeaturedPlaylists();
     
+    // Load Handpicked Playlists on home page
+    loadHandpickedPlaylistsHome();
+    
     // Set up lazy-loading for screen categories
     initLazyLoading();
     
     // Inject and observe all dynamic footer categories
     addMoreSections();
+    
+    // Initialize mobile navigation
+    initMobileNavigation();
+    
+    // Initialize mobile player view toggling
+    initMobilePlayerToggle();
+    
+    // Initialize JioSaavn URL import bindings
+    initJioSaavnImport();
 });
 
 async function findWorkingApi() {
@@ -1491,7 +1550,13 @@ async function playSong(song) {
     if (!song.downloadUrl && !song.youtubeId) {
         try {
             console.log("Fetching missing song details for:", song.id);
-            const res = await fetch(`${currentApiBase}/songs?ids=${song.id}`);
+            let fetchUrl = `${currentApiBase}/songs?`;
+            if (song.id.startsWith('http://') || song.id.startsWith('https://')) {
+                fetchUrl += `link=${encodeURIComponent(song.id)}`;
+            } else {
+                fetchUrl += `ids=${song.id}`;
+            }
+            const res = await fetch(fetchUrl);
             const data = await res.json();
             const fullSong = data.data?.[0] || data?.[0];
             if (fullSong && fullSong.downloadUrl) {
@@ -1629,7 +1694,11 @@ function handlePlaybackError(url, error) {
 }
 
 function updatePlayPauseIcon(playing) {
-    playPauseBtn.innerHTML = playing ? '<i data-lucide="pause"></i>' : '<i data-lucide="play"></i>';
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    const playPauseBtnMobile = document.getElementById('play-pause-btn-mobile');
+    const iconHtml = playing ? '<i data-lucide="pause"></i>' : '<i data-lucide="play"></i>';
+    if (playPauseBtn) playPauseBtn.innerHTML = iconHtml;
+    if (playPauseBtnMobile) playPauseBtnMobile.innerHTML = iconHtml;
     
     // Sync Hero section play button and badge if it displays the current song
     const heroTitle = document.querySelector('.hero h1');
@@ -2506,4 +2575,418 @@ function switchUser(initials, name, element) {
     
     // Refresh lucide icons if needed
     lucide.createIcons();
+}
+
+// ─── JioSaavn Import & Mobile Compatibility Modules ─────────────────────────
+
+async function handleJioSaavnImport(url) {
+    if (!url) return;
+    url = url.trim();
+    
+    if (!url.includes('saavn.com') && !url.includes('saavn.dev')) {
+        alert("Please enter a valid JioSaavn link!");
+        return;
+    }
+    
+    let type = 'song';
+    if (url.includes('/album/')) {
+        type = 'album';
+    } else if (url.includes('/featured/') || url.includes('/playlist/')) {
+        type = 'playlist';
+    }
+    
+    console.log(`[Import] Attempting to load JioSaavn ${type} from link:`, url);
+    const importBtn = document.getElementById('import-url-btn');
+    const originalText = importBtn ? importBtn.innerText : 'Import';
+    if (importBtn) {
+        importBtn.innerText = 'Loading...';
+        importBtn.disabled = true;
+    }
+    
+    try {
+        if (type === 'song') {
+            const res = await fetch(`${currentApiBase}/songs?link=${encodeURIComponent(url)}`);
+            if (!res.ok) throw new Error("API call returned status: " + res.status);
+            const result = await res.json();
+            
+            let song = null;
+            if (result && result.success && result.data) {
+                song = result.data[0] || result.data;
+            } else if (result && result.data) {
+                song = result.data[0] || result.data;
+            } else if (Array.isArray(result)) {
+                song = result[0];
+            } else if (result) {
+                song = result;
+            }
+            
+            if (song && song.id) {
+                playSong(song);
+                updateQueue([song], song);
+                const input = document.getElementById('import-url-input');
+                if (input) input.value = '';
+            } else {
+                throw new Error("Could not extract song metadata");
+            }
+        } else {
+            // Album or Playlist
+            openDetailView(type, url);
+            const input = document.getElementById('import-url-input');
+            if (input) input.value = '';
+        }
+    } catch (e) {
+        console.error("[Import] Failed:", e);
+        alert("Failed to load content from JioSaavn. The API mirror may be overloaded. Details: " + e.message);
+    } finally {
+        if (importBtn) {
+            importBtn.innerText = originalText;
+            importBtn.disabled = false;
+        }
+    }
+}
+
+function initJioSaavnImport() {
+    const importBtn = document.getElementById('import-url-btn');
+    const importInput = document.getElementById('import-url-input');
+    
+    if (importBtn && importInput) {
+        importBtn.onclick = () => {
+            handleJioSaavnImport(importInput.value);
+        };
+        importInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                handleJioSaavnImport(importInput.value);
+            }
+        };
+    }
+}
+
+async function performPlaylistSearch(query) {
+    const feed = document.getElementById('all-playlists-feed');
+    const grid = document.getElementById('playlists-grid');
+
+    if (!query) {
+        showDiscoverPlaylistsFeed();
+        return;
+    }
+    
+    if (feed) feed.classList.add('hidden');
+    if (grid) grid.classList.remove('hidden');
+    
+    if (!grid) return;
+    
+    grid.innerHTML = `<div class="loader-container"><div class="loader-spinner"></div></div>`;
+    
+    try {
+        const response = await fetch(`${currentApiBase}/search/playlists?query=${encodeURIComponent(query)}&limit=24`);
+        const result = await response.json();
+        const playlists = result.data?.results || result.results || [];
+        
+        document.querySelectorAll('.playlist-nav-btn').forEach(b => b.classList.remove('active'));
+        renderAlbumsOrPlaylists(playlists, grid, 'playlist');
+    } catch (e) {
+        console.error("Playlist search failed:", e);
+        grid.innerHTML = `<p class="error-state">Failed to find matching playlists. Please try again.</p>`;
+    }
+}
+
+function initMobileNavigation() {
+    const mobHome = document.getElementById('mobile-tab-home');
+    const mobPlaylists = document.getElementById('mobile-tab-playlists');
+    const mobSearch = document.getElementById('mobile-tab-search');
+    const mobLibrary = document.getElementById('mobile-tab-library');
+    
+    if (mobHome) mobHome.onclick = () => switchMobileView('home-view', 'mobile-tab-home');
+    if (mobPlaylists) mobPlaylists.onclick = () => {
+        switchMobileView('playlists-view', 'mobile-tab-playlists');
+        showDiscoverPlaylistsFeed();
+    };
+    if (mobSearch) mobSearch.onclick = () => switchMobileView('search-view', 'mobile-tab-search');
+    if (mobLibrary) mobLibrary.onclick = () => {
+        switchMobileView('library-view', 'mobile-tab-library');
+        updateLibraryUI();
+    };
+
+    // Bind playlist search bar listeners
+    const playlistSearchInput = document.getElementById('playlist-search-input');
+    let playlistSearchTimeout = null;
+    if (playlistSearchInput) {
+        playlistSearchInput.addEventListener('input', () => {
+            clearTimeout(playlistSearchTimeout);
+            const query = playlistSearchInput.value.trim();
+            playlistSearchTimeout = setTimeout(() => {
+                performPlaylistSearch(query);
+            }, 400);
+        });
+        
+        playlistSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                clearTimeout(playlistSearchTimeout);
+                performPlaylistSearch(playlistSearchInput.value.trim());
+            }
+        });
+    }
+}
+
+function switchMobileView(viewId, mobileTabId) {
+    switchView(viewId);
+    document.querySelectorAll('.mobile-nav li').forEach(li => {
+        li.classList.remove('active');
+    });
+    const activeTab = document.getElementById(mobileTabId);
+    if (activeTab) activeTab.classList.add('active');
+}
+
+function initMobilePlayerToggle() {
+    const playerBar = document.querySelector('.player-bar');
+    const minimizeBtn = document.getElementById('minimize-mobile-player');
+    const mobileEqBtn = document.getElementById('mobile-eq-btn');
+    const playPauseBtnMobile = document.getElementById('play-pause-btn-mobile');
+    
+    if (playerBar) {
+        playerBar.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && !playerBar.classList.contains('fullscreen-mobile')) {
+                // Prevent toggle if clicking buttons, ranges or hearts
+                if (!e.target.closest('button') && !e.target.closest('input')) {
+                    playerBar.classList.add('fullscreen-mobile');
+                }
+            }
+        });
+    }
+    
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (playerBar) playerBar.classList.remove('fullscreen-mobile');
+        });
+    }
+    
+    if (mobileEqBtn) {
+        mobileEqBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const eqModal = document.getElementById('eq-modal');
+            if (eqModal) eqModal.classList.add('show');
+        });
+    }
+    
+    if (playPauseBtnMobile) {
+        playPauseBtnMobile.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            if (playPauseBtn) playPauseBtn.click();
+        });
+    }
+}
+
+// Playlists Discover Feed Logic
+
+function showDiscoverPlaylistsFeed() {
+    const feed = document.getElementById('all-playlists-feed');
+    const grid = document.getElementById('playlists-grid');
+    
+    if (feed) feed.classList.remove('hidden');
+    if (grid) grid.classList.add('hidden');
+    
+    document.querySelectorAll('.playlist-nav-btn').forEach(b => b.classList.remove('active'));
+    loadAllPlaylistsFeed();
+}
+
+async function loadAllPlaylistsFeed() {
+    const feed = document.getElementById('all-playlists-feed');
+    if (!feed) return;
+    
+    if (feed.getAttribute('data-loaded') === 'true') return;
+    
+    feed.innerHTML = `<div class="loader-container"><div class="loader-spinner"></div></div>`;
+    
+    const categories = [
+        { name: 'Handpicked', title: 'Handpicked Malayalam Specials', isHandpicked: true },
+        { name: 'Malayalam', title: 'Trending Malayalam Playlists', query: 'Malayalam Hits' },
+        { name: 'Hindi', title: 'Hindi Chartbusters', query: 'Hindi Hits' },
+        { name: 'Tamil', title: 'Tamil Hits & Melodies', query: 'Tamil Hits' },
+        { name: 'Telugu', title: 'Telugu Chartbusters', query: 'Telugu Hits' },
+        { name: 'Punjabi', title: 'Punjabi Chartbusters', query: 'Punjabi Hits' },
+        { name: 'Kannada', title: 'Kannada Melodies', query: 'Kannada Hits' },
+        { name: 'English', title: 'Global Pop & English Hits', query: 'Pop Hits' },
+        { name: 'Lofi', title: 'Lofi & Chillout Playlists', query: 'Indian lofi chill' },
+        { name: 'Party', title: 'Party & Dance Anthems', query: 'Bollywood dance party' },
+        { name: 'Devotional', title: 'Spirit & Soul (Devotional)', query: 'Malayalam devotional' }
+    ];
+    
+    try {
+        feed.innerHTML = '';
+        
+        for (const cat of categories) {
+            const section = document.createElement('div');
+            section.className = 'music-section';
+            section.style.marginBottom = '32px';
+            section.innerHTML = `
+                <div class="section-header">
+                    <h3>${cat.title}</h3>
+                </div>
+                <div class="horizontal-scroll" id="feed-cat-${cat.name}">
+                    <div class="loader-container"><div class="loader-spinner"></div></div>
+                </div>
+            `;
+            feed.appendChild(section);
+            
+            if (cat.isHandpicked) {
+                loadHandpickedPlaylists();
+            } else {
+                fetchPlaylistSection(cat.query, `feed-cat-${cat.name}`);
+            }
+        }
+        
+        feed.setAttribute('data-loaded', 'true');
+    } catch (e) {
+        console.error("Failed to load all playlists feed:", e);
+        feed.innerHTML = `<p class="error-state">Failed to load discover feed. Please try again.</p>`;
+    }
+}
+
+async function fetchPlaylistSection(query, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    try {
+        const response = await fetch(`${currentApiBase}/search/playlists?query=${encodeURIComponent(query)}&limit=10`);
+        const result = await response.json();
+        const playlists = result.data?.results || result.results || [];
+        
+        renderAlbumsOrPlaylists(playlists, container, 'playlist');
+    } catch (e) {
+        console.error(`Failed to fetch playlists for ${query}:`, e);
+        container.innerHTML = `<p class="error-state">Failed to load playlists.</p>`;
+    }
+}
+
+function renderArtists(items, container) {
+    if (!items || items.length === 0) {
+        container.innerHTML = '<p class="error-state">No artists found.</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'song-card';
+        card.style.borderRadius = '20px';
+        card.style.textAlign = 'center';
+        card.style.padding = '20px 14px';
+        
+        let imgUrl = 'https://via.placeholder.com/150';
+        if (Array.isArray(item.image)) {
+            imgUrl = item.image[2]?.url || item.image[1]?.url || item.image[0]?.url;
+        } else if (typeof item.image === 'string') {
+            imgUrl = item.image;
+        }
+        
+        const name = item.name || item.title || "Artist";
+        
+        card.innerHTML = `
+            <div class="card-img-container" style="border-radius: 50%; overflow: hidden; width: 130px; height: 130px; margin: 0 auto 12px auto; border: 2px solid var(--glass-border);">
+                <img src="${imgUrl}" alt="${name}" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;">
+                <div class="play-overlay" style="border-radius: 50%;">
+                    <div class="btn-play-circle">
+                        <i data-lucide="user" style="fill: white; color: white;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="song-card-info" style="text-align: center;">
+                <h4 style="font-size: 0.95rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;">${name}</h4>
+                <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 0;">Artist</p>
+            </div>
+        `;
+        
+        card.addEventListener('click', () => {
+            openDetailView('artist', item.id);
+        });
+        
+        container.appendChild(card);
+    });
+    lucide.createIcons();
+}
+
+// ─── Handpicked Playlists Logic ──────────────────────────────────────────────
+
+const HANDPICKED_PLAYLISTS = [
+    { name: "Swami Ayyappan", link: "https://www.jiosaavn.com/featured/swami-ayyappan-malayalam/KQ7kT9AqvsQ_" },
+    { name: "Mohanlal 90s Hits", link: "https://www.jiosaavn.com/featured/mohanlal-90s-hits-malayalam/HFkafOq5BXjuCJW60TJk1Q__" },
+    { name: "90s Dance Hits", link: "https://www.jiosaavn.com/featured/90s-dance-hits-malayalam/GjTlSVfKUZswkg5tVhI3fw__" },
+    { name: "Malayalam Superhits Top 50", link: "https://www.jiosaavn.com/featured/malayalam-india-superhits-top-50/1e3vU4q7bbbExeh5N5JWFg__" },
+    { name: "Most Streamed Love Songs", link: "https://www.jiosaavn.com/featured/most-streamed-love-songs-malayalam/1rJj5k7kKDipJ,OEBt5Zbg__" },
+    { name: "Malayalam Golden Oldies", link: "https://www.jiosaavn.com/featured/malayalam-golden-oldies/tVj-faHettfc1EngHtQQ2g__" },
+    { name: "Best of Romance Malayalam", link: "https://www.jiosaavn.com/featured/best-of-romance-malayalam/CBJDUkJa-c-c1EngHtQQ2g__" },
+    { name: "Monsoon Masala Malayalam", link: "https://www.jiosaavn.com/featured/monsoon-masala-malayalam/g24AvLD08ys_" },
+    { name: "Malayalam Drive Reprise", link: "https://www.jiosaavn.com/featured/malayalam-drive-reprise/pQavzHBrZcfufxkxMEIbIw__" },
+    { name: "90s Chill Hits Malayalam", link: "https://www.jiosaavn.com/featured/90s-chill-hits-malayalam/VthPY7bJefZFo9wdEAzFBA__" },
+    { name: "Lofi Hits Malayalam", link: "https://www.jiosaavn.com/featured/lofi-hits-malayalam/7xKCz4VSUL,Tb7czG7lKZg__" },
+    { name: "Best of 2010s Malayalam", link: "https://www.jiosaavn.com/featured/best-of-2010s-malayalam/R598lCB1ZTuO0eMLZZxqsA__" },
+    { name: "Let's Play Manikandan Ayyappa", link: "https://www.jiosaavn.com/featured/lets-play-manikandan-ayyappa-malayalam/fvCT55HTFg82DowkhAtzrw__" }
+];
+
+async function loadHandpickedPlaylists() {
+    const container = document.getElementById('feed-cat-Handpicked');
+    if (!container) return;
+    
+    container.innerHTML = `<div class="loader-container"><div class="loader-spinner"></div></div>`;
+    
+    try {
+        const promises = HANDPICKED_PLAYLISTS.map(async (item) => {
+            try {
+                const response = await fetch(`${currentApiBase}/playlists?link=${encodeURIComponent(item.link)}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    return result.data || result;
+                }
+            } catch (err) {
+                console.error(`Error loading handpicked playlist: ${item.name}`, err);
+            }
+            return {
+                id: item.link,
+                name: item.name,
+                image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=2070&auto=format&fit=crop",
+                type: 'playlist'
+            };
+        });
+        
+        const playlists = await Promise.all(promises);
+        renderAlbumsOrPlaylists(playlists.filter(p => p), container, 'playlist');
+    } catch (e) {
+        console.error("Failed to load handpicked playlists:", e);
+        container.innerHTML = `<p class="error-state">Failed to load handpicked playlists.</p>`;
+    }
+}
+
+async function loadHandpickedPlaylistsHome() {
+    const container = document.getElementById('handpicked-playlists');
+    if (!container) return;
+    
+    container.innerHTML = `<div class="loader-container"><div class="loader-spinner"></div></div>`;
+    
+    try {
+        const promises = HANDPICKED_PLAYLISTS.map(async (item) => {
+            try {
+                const response = await fetch(`${currentApiBase}/playlists?link=${encodeURIComponent(item.link)}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    return result.data || result;
+                }
+            } catch (err) {
+                console.error(`Error loading handpicked playlist: ${item.name}`, err);
+            }
+            return {
+                id: item.link,
+                name: item.name,
+                image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=2070&auto=format&fit=crop",
+                type: 'playlist'
+            };
+        });
+        
+        const playlists = await Promise.all(promises);
+        renderAlbumsOrPlaylists(playlists.filter(p => p), container, 'playlist');
+    } catch (e) {
+        console.error("Failed to load handpicked playlists on home:", e);
+        container.innerHTML = `<p class="error-state">Failed to load handpicked playlists.</p>`;
+    }
 }
