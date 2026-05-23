@@ -1548,6 +1548,12 @@ async function playSong(song) {
     
     // Auto-fetch details if missing downloadUrl
     if (!song.downloadUrl && !song.youtubeId) {
+        // Keep iOS/Android audio session alive by playing silence during fetch
+        try {
+            audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+            audio.play().catch(() => {});
+        } catch (e) {}
+
         try {
             console.log("Fetching missing song details for:", song.id);
             let fetchUrl = `${currentApiBase}/songs?`;
@@ -1726,6 +1732,159 @@ function updatePlayPauseIcon(playing) {
     lucide.createIcons();
 }
 
+function getDominantColors(imgUrl) {
+    return new Promise((resolve) => {
+        const fallback = {
+            primary: 'rgb(255, 170, 0)',
+            secondary: 'rgb(255, 94, 0)',
+            glow: 'rgba(255, 170, 0, 0.25)',
+            accent: '#ffaa00',
+            accentHover: '#ffc837',
+            accentSecondary: '#ff5e00'
+        };
+        
+        if (!imgUrl || imgUrl.includes('placeholder') || imgUrl.includes('via.placeholder.com')) {
+            resolve(fallback);
+            return;
+        }
+
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = imgUrl;
+        
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 10;
+                canvas.height = 10;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, 10, 10);
+                const data = ctx.getImageData(0, 0, 10, 10).data;
+                
+                let r = 0, g = 0, b = 0;
+                let count = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    const rVal = data[i];
+                    const gVal = data[i+1];
+                    const bVal = data[i+2];
+                    const brightness = (rVal * 299 + gVal * 587 + bVal * 114) / 1000;
+                    
+                    // Keep moderately saturated pixels to avoid pitch black or pure white accents
+                    if (brightness > 20 && brightness < 235) {
+                        r += rVal;
+                        g += gVal;
+                        b += bVal;
+                        count++;
+                    }
+                }
+                
+                if (count === 0) {
+                    for (let i = 0; i < data.length; i += 4) {
+                        r += data[i];
+                        g += data[i+1];
+                        b += data[i+2];
+                        count++;
+                    }
+                }
+                
+                r = Math.round(r / count);
+                g = Math.round(g / count);
+                b = Math.round(b / count);
+                
+                // Keep accents legible by ensuring they meet a minimum brightness
+                const minBrightness = 45;
+                const currentBrightness = (r * 299 + g * 587 + b * 114) / 1000;
+                if (currentBrightness < minBrightness) {
+                    const factor = minBrightness / (currentBrightness || 1);
+                    r = Math.min(255, Math.round(r * factor));
+                    g = Math.min(255, Math.round(g * factor));
+                    b = Math.min(255, Math.round(b * factor));
+                }
+
+                const primary = `rgb(${r}, ${g}, ${b})`;
+                const glow = `rgba(${r}, ${g}, ${b}, 0.25)`;
+                
+                // Create a secondary hue shifted color for background gradients
+                let sr = Math.min(255, Math.round(r * 0.7));
+                let sg = Math.min(255, Math.round(g * 0.6));
+                let sb = Math.min(255, Math.round(b * 1.1));
+                if (sr === r && sg === g && sb === b) {
+                    sr = Math.max(0, r - 50);
+                    sg = Math.max(0, g - 50);
+                    sb = Math.max(0, b - 50);
+                }
+                const secondary = `rgb(${sr}, ${sg}, ${sb})`;
+                const accent = primary;
+                
+                // Hover color is slightly lightened
+                const hr = Math.min(255, r + 30);
+                const hg = Math.min(255, g + 30);
+                const hb = Math.min(255, b + 30);
+                const accentHover = `rgb(${hr}, ${hg}, ${hb})`;
+                
+                resolve({
+                    primary,
+                    secondary,
+                    glow,
+                    accent,
+                    accentHover,
+                    accentSecondary: secondary
+                });
+            } catch (e) {
+                console.warn("Failed canvas color read:", e);
+                resolve(fallback);
+            }
+        };
+        
+        img.onerror = () => {
+            resolve(fallback);
+        };
+    });
+}
+
+let isPreloadingNext = false;
+async function preloadNextSong() {
+    if (isPreloadingNext || !queue || queue.length <= 1) return;
+    
+    // Sync queue index
+    let nextIndex = currentIndex + 1;
+    if (nextIndex >= queue.length) {
+        if (isRepeat === 'all') {
+            nextIndex = 0;
+        } else {
+            return;
+        }
+    }
+    
+    const nextSong = queue[nextIndex];
+    if (!nextSong || nextSong.downloadUrl || nextSong.youtubeId) {
+        return; // Already has source URL or is YouTube video
+    }
+    
+    isPreloadingNext = true;
+    try {
+        console.log("[Background Preload] Preloading next song URL for:", nextSong.name);
+        let fetchUrl = `${currentApiBase}/songs?`;
+        if (nextSong.id.startsWith('http://') || nextSong.id.startsWith('https://')) {
+            fetchUrl += `link=${encodeURIComponent(nextSong.id)}`;
+        } else {
+            fetchUrl += `ids=${nextSong.id}`;
+        }
+        const res = await fetch(fetchUrl);
+        const data = await res.json();
+        const fullSong = data.data?.[0] || data?.[0];
+        if (fullSong && fullSong.downloadUrl) {
+            nextSong.downloadUrl = fullSong.downloadUrl;
+            if (fullSong.image) nextSong.image = fullSong.image;
+            console.log("[Background Preload] Successfully resolved next song download URL in advance.");
+        }
+    } catch (e) {
+        console.warn("[Background Preload] Preload failed:", e);
+    } finally {
+        isPreloadingNext = false;
+    }
+}
+
 function updateUI(song) {
     if (!song) return;
     const songName = song.name || song.title || "Unknown Song";
@@ -1753,6 +1912,16 @@ function updateUI(song) {
     
     currentAlbumArt.src = imgUrl;
     
+    // Update theme custom variables dynamically on track load!
+    getDominantColors(imgUrl).then(colors => {
+        document.documentElement.style.setProperty('--dynamic-accent', colors.accent);
+        document.documentElement.style.setProperty('--dynamic-accent-hover', colors.accentHover);
+        document.documentElement.style.setProperty('--dynamic-accent-secondary', colors.accentSecondary);
+        document.documentElement.style.setProperty('--current-song-color-primary', colors.primary);
+        document.documentElement.style.setProperty('--current-song-color-secondary', colors.secondary);
+        document.documentElement.style.setProperty('--current-song-color-glow', colors.glow);
+    });
+
     // Update ambient background glow
     const backdrop = document.getElementById('ambient-backdrop');
     if (backdrop) {
@@ -2174,6 +2343,11 @@ audio.addEventListener('timeupdate', () => {
     currentTimeEl.innerText = formatTime(audio.currentTime);
     totalDurationEl.innerText = formatTime(audio.duration);
     updateMediaSessionPositionState();
+    
+    // Preload next track at 85% completion to prevent background playback gaps
+    if (audio.duration && (audio.currentTime / audio.duration) > 0.85) {
+        preloadNextSong();
+    }
 });
 
 audio.addEventListener('loadedmetadata', () => {
@@ -2453,11 +2627,24 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!dataArray) return;
     
-    // Premium gradient styling (Amber/Gold/Sunfire) matching the app design system
+    // Sync visualizer rendering dynamically with custom theme properties
+    const style = getComputedStyle(document.documentElement);
+    const primColor = style.getPropertyValue('--current-song-color-primary').trim() || 'rgb(255, 170, 0)';
+    const secColor = style.getPropertyValue('--current-song-color-secondary').trim() || 'rgb(255, 94, 0)';
+    
+    const primMatch = primColor.match(/\d+/g);
+    const secMatch = secColor.match(/\d+/g);
+    const pr = primMatch ? primMatch[0] : 255;
+    const pg = primMatch ? primMatch[1] : 170;
+    const pb = primMatch ? primMatch[2] : 0;
+    const sr = secMatch ? secMatch[0] : 255;
+    const sg = secMatch ? secMatch[1] : 94;
+    const sb = secMatch ? secMatch[2] : 0;
+
     const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
-    gradient.addColorStop(0, 'rgba(255, 170, 0, 0.2)'); // Amber transparent
-    gradient.addColorStop(0.5, 'rgba(255, 94, 0, 0.6)'); // Sunfire Orange medium
-    gradient.addColorStop(1, 'rgba(255, 170, 0, 1)'); // Solid gold top
+    gradient.addColorStop(0, `rgba(${pr}, ${pg}, ${pb}, 0.2)`);
+    gradient.addColorStop(0.5, `rgba(${sr}, ${sg}, ${sb}, 0.6)`);
+    gradient.addColorStop(1, `rgb(${pr}, ${pg}, ${pb})`);
     
     const barWidth = (canvas.width / dataArray.length) * 2.5;
     let barHeight;
