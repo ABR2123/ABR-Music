@@ -21,6 +21,76 @@ let hasInitializedAudio = false; // Flag for iOS first interaction
 const canvas = document.getElementById('visualizer');
 const ctx = canvas.getContext('2d');
 
+// ─── API Caching Utilities ───────────────────────────────────────────────────
+const apiCache = {
+    search: {},
+    details: {},
+    trending: {},
+    playlists: {},
+    albums: {},
+    artists: {}
+};
+const CACHE_TTL = 300000; // 5 minutes in milliseconds
+
+function getCachedData(type, key) {
+    const cached = apiCache[type] && apiCache[type][key];
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+        return cached.data;
+    }
+    return null;
+}
+
+function setCachedData(type, key, data) {
+    if (!apiCache[type]) apiCache[type] = {};
+    apiCache[type][key] = {
+        data: data,
+        timestamp: Date.now()
+    };
+}
+
+// ─── Custom Premium Toast System ─────────────────────────────────────────────
+function showToast(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    let iconName = 'info';
+    if (type === 'success') iconName = 'check-circle';
+    else if (type === 'error') iconName = 'alert-triangle';
+    else if (type === 'warning') iconName = 'alert-circle';
+    
+    toast.innerHTML = `<i data-lucide="${iconName}"></i> <span>${message}</span>`;
+    container.appendChild(toast);
+    
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+    
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+    
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        const onFadeEnd = () => {
+            toast.removeEventListener('transitionend', onFadeEnd);
+            toast.remove();
+        };
+        toast.addEventListener('transitionend', onFadeEnd);
+    }, 4000);
+}
+
+// Override native alert to use custom Toast notifications globally
+window.alert = function(message) {
+    showToast(message, 'info');
+};
+
 // Global navigation & library state
 let previousActiveView = 'home-view';
 let activeView = 'home-view';
@@ -406,7 +476,7 @@ function initNavigation() {
                 updateQueue(likedSongs, likedSongs[0]);
                 updateTracksPlayingStates();
             } else {
-                alert("Your library is empty. Like some songs first!");
+                showToast("Your library is empty. Like some songs first!", "warning");
             }
         });
     }
@@ -420,7 +490,7 @@ function initNavigation() {
                 updateQueue(currentDetailSongs, currentDetailSongs[0]);
                 updateTracksPlayingStates();
             } else {
-                alert("No songs in this album/playlist to play!");
+                showToast("No songs in this album/playlist to play!", "warning");
             }
         });
     }
@@ -430,10 +500,13 @@ function initNavigation() {
 function toggleLikeSong(song) {
     if (!song) return;
     const index = likedSongs.findIndex(s => s.id === song.id);
+    const songName = song.name || song.title || "Song";
     if (index > -1) {
         likedSongs.splice(index, 1);
+        showToast(`Removed "${songName}" from Library`, 'info');
     } else {
         likedSongs.push(song);
+        showToast(`Added "${songName}" to Library`, 'success');
     }
     localStorage.setItem('likedSongs', JSON.stringify(likedSongs));
     
@@ -634,6 +707,38 @@ function updateLibraryUI() {
     lucide.createIcons();
 }
 
+function renderDetailViewData(type, id, data, coverArt, titleEl, descEl, typeBadge, metaEl, tracksList) {
+    currentDetailSongs = data.songs || [];
+    
+    // Set header info
+    let imgUrl = 'https://via.placeholder.com/200';
+    if (Array.isArray(data.image)) {
+        imgUrl = data.image[2]?.url || data.image[1]?.url || data.image[0]?.url;
+    } else if (typeof data.image === 'string') {
+        imgUrl = data.image;
+    }
+    
+    coverArt.src = imgUrl;
+    titleEl.innerText = data.name || data.title || "Untitled";
+    descEl.innerText = data.description || "";
+    typeBadge.innerText = type.charAt(0).toUpperCase() + type.slice(1);
+    metaEl.innerText = `${data.year || '2026'} • ${currentDetailSongs.length} songs`;
+    
+    // Render tracks
+    renderDetailTracks(currentDetailSongs);
+    
+    // Update detail-like-btn state
+    updateDetailLikeBtn(id);
+    
+    // Bind detail-like-btn click
+    const detailLikeBtn = document.getElementById('detail-like-btn');
+    if (detailLikeBtn) {
+        detailLikeBtn.onclick = () => {
+            toggleLikeAlbum(id, { id, name: data.name || data.title, type, image: data.image, year: data.year });
+        };
+    }
+}
+
 // --- Detail View Module ---
 async function openDetailView(type, id) {
     switchView('detail-view');
@@ -644,6 +749,14 @@ async function openDetailView(type, id) {
     const typeBadge = document.getElementById('detail-type-badge');
     const metaEl = document.getElementById('detail-meta-info');
     const tracksList = document.getElementById('detail-tracks-list');
+    
+    const cacheKey = `${type}_${id}`;
+    const cached = getCachedData('details', cacheKey);
+    if (cached) {
+        console.log(`[Cache Hit] Details for ${type}: ${id}`);
+        renderDetailViewData(type, id, cached, coverArt, titleEl, descEl, typeBadge, metaEl, tracksList);
+        return;
+    }
     
     // Set loading state
     titleEl.innerText = "Loading...";
@@ -669,35 +782,8 @@ async function openDetailView(type, id) {
         
         if (result && result.success && result.data) {
             const data = result.data;
-            currentDetailSongs = data.songs || [];
-            
-            // Set header info
-            let imgUrl = 'https://via.placeholder.com/200';
-            if (Array.isArray(data.image)) {
-                imgUrl = data.image[2]?.url || data.image[1]?.url || data.image[0]?.url;
-            } else if (typeof data.image === 'string') {
-                imgUrl = data.image;
-            }
-            
-            coverArt.src = imgUrl;
-            titleEl.innerText = data.name || data.title || "Untitled";
-            descEl.innerText = data.description || "";
-            typeBadge.innerText = type.charAt(0).toUpperCase() + type.slice(1);
-            metaEl.innerText = `${data.year || '2026'} • ${currentDetailSongs.length} songs`;
-            
-            // Render tracks
-            renderDetailTracks(currentDetailSongs);
-            
-            // Update detail-like-btn state
-            updateDetailLikeBtn(id);
-            
-            // Bind detail-like-btn click
-            const detailLikeBtn = document.getElementById('detail-like-btn');
-            if (detailLikeBtn) {
-                detailLikeBtn.onclick = () => {
-                    toggleLikeAlbum(id, { id, name: data.name || data.title, type, image: data.image, year: data.year });
-                };
-            }
+            setCachedData('details', cacheKey, data);
+            renderDetailViewData(type, id, data, coverArt, titleEl, descEl, typeBadge, metaEl, tracksList);
         } else {
             throw new Error("Failed to load details");
         }
@@ -718,10 +804,13 @@ async function openDetailView(type, id) {
 
 function toggleLikeAlbum(albumId, albumData) {
     const index = likedAlbums.findIndex(a => a.id === albumId);
+    const title = albumData.name || albumData.title || "Collection";
     if (index > -1) {
         likedAlbums.splice(index, 1);
+        showToast(`Removed "${title}" from Library`, 'info');
     } else {
         likedAlbums.push(albumData);
+        showToast(`Added "${title}" to Library`, 'success');
     }
     localStorage.setItem('likedAlbums', JSON.stringify(likedAlbums));
     updateDetailLikeBtn(albumId);
@@ -849,6 +938,38 @@ function renderDetailTracks(songs) {
     lucide.createIcons();
 }
 
+function renderSearchResults(results) {
+    // Render Songs
+    const songs = results.songs?.results || [];
+    renderSongs(songs, document.getElementById('search-results-songs'));
+    
+    // Render Albums
+    const albums = results.albums?.results || [];
+    renderAlbumsOrPlaylists(albums, document.getElementById('search-results-albums'), 'album');
+    
+    // Render Playlists
+    const playlists = results.playlists?.results || [];
+    renderAlbumsOrPlaylists(playlists, document.getElementById('search-results-playlists'), 'playlist');
+    
+    // Render Artists
+    const artists = results.artists?.results || [];
+    renderArtists(artists, document.getElementById('search-results-artists'));
+    
+    // iOS Autoplay Bypass: Background prefetch top 10 songs
+    preloadSearchResultsUrls(songs);
+}
+
+function preloadSearchResultsUrls(songs) {
+    if (!songs || songs.length === 0) return;
+    const targets = songs.slice(0, 10).filter(s => !s.downloadUrl && !s.youtubeId);
+    if (targets.length === 0) return;
+    
+    console.log(`[iOS Optimization] Background preloading details for top ${targets.length} search results...`);
+    targets.forEach(song => {
+        preloadSongUrl(song); // async prefetch
+    });
+}
+
 // --- Search & Categories Module ---
 async function performSearch(query) {
     if (!query) return;
@@ -867,6 +988,14 @@ async function performSearch(query) {
     const resultsWrapper = document.getElementById('search-results-wrapper');
     if (categoriesContainer) categoriesContainer.classList.add('hidden');
     if (resultsWrapper) resultsWrapper.classList.remove('hidden');
+    
+    const cacheKey = query.trim().toLowerCase();
+    const cached = getCachedData('search', cacheKey);
+    if (cached) {
+        console.log(`[Cache Hit] Search results for: ${query}`);
+        renderSearchResults(cached);
+        return;
+    }
     
     // Show spinner inside all columns
     document.getElementById('search-results-songs').innerHTML = `
@@ -888,22 +1017,8 @@ async function performSearch(query) {
         
         if (result && result.success && result.data) {
             const results = result.data;
-            
-            // Render Songs
-            const songs = results.songs?.results || [];
-            renderSongs(songs, document.getElementById('search-results-songs'));
-            
-            // Render Albums
-            const albums = results.albums?.results || [];
-            renderAlbumsOrPlaylists(albums, document.getElementById('search-results-albums'), 'album');
-            
-            // Render Playlists
-            const playlists = results.playlists?.results || [];
-            renderAlbumsOrPlaylists(playlists, document.getElementById('search-results-playlists'), 'playlist');
-            
-            // Render Artists
-            const artists = results.artists?.results || [];
-            renderArtists(artists, document.getElementById('search-results-artists'));
+            setCachedData('search', cacheKey, results);
+            renderSearchResults(results);
         } else {
             throw new Error("Invalid API response format");
         }
@@ -1089,7 +1204,7 @@ async function loadFeaturedPlaylists() {
 }
 
 // Initial Load
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
     // Restore Shuffle & Repeat settings
     isShuffle = localStorage.getItem('player_shuffle') === 'true';
     if (shuffleBtn) {
@@ -1112,43 +1227,38 @@ window.addEventListener('DOMContentLoaded', async () => {
             repeatBtn.title = 'Repeat: OFF';
         }
     }
-    lucide.createIcons();
-
-    // Initialize Navigation & UI Bindings
+    
+    // Initialize Navigation & UI Bindings synchronously
     initNavigation();
+    initMobileNavigation();
+    initMobilePlayerToggle();
+    initJioSaavnImport();
     
-    // Probes API mirrors concurrently
-    await findWorkingApi();
-    
-    // Render Jukebox immediately from local dataset
+    // Render local Jukebox & Ayyappa datasets immediately (no network block)
     renderSongs(MALAYALAM_JUKEBOX, document.getElementById('malayalam-jukebox'));
-    
-    // Render Ayyappa Songs immediately from local dataset
     renderSongs(AYYAPPA_JUKEBOX, document.getElementById('ayyappa-songs'));
     
-    // Load Jukebox CDN stream URLs in background
-    preloadJukeboxDetails();
+    if (window.lucide) {
+        lucide.createIcons();
+    }
     
-    // Load Featured Playlists on home page
-    loadFeaturedPlaylists();
-    
-    // Load Handpicked Playlists on home page
-    loadHandpickedPlaylistsHome();
-    
-    // Set up lazy-loading for screen categories
-    initLazyLoading();
-    
-    // Inject and observe all dynamic footer categories
-    addMoreSections();
-    
-    // Initialize mobile navigation
-    initMobileNavigation();
-    
-    // Initialize mobile player view toggling
-    initMobilePlayerToggle();
-    
-    // Initialize JioSaavn URL import bindings
-    initJioSaavnImport();
+    // Check working API mirror in background, then load remote datasets
+    findWorkingApi().then(() => {
+        // Load Jukebox CDN stream URLs in background
+        preloadJukeboxDetails();
+        
+        // Load Featured Playlists on home page
+        loadFeaturedPlaylists();
+        
+        // Load Handpicked Playlists on home page
+        loadHandpickedPlaylistsHome();
+        
+        // Set up lazy-loading for screen categories
+        initLazyLoading();
+        
+        // Inject and observe all dynamic footer categories
+        addMoreSections();
+    });
 });
 
 async function findWorkingApi() {
@@ -1262,8 +1372,23 @@ async function addMoreSections() {
     });
 }
 
+function renderTrendingData(results, query, container, append) {
+    renderSongs(results, container, append);
+    if (query.toLowerCase().includes('malayalam trending') || query.toLowerCase().includes('malayalam latest') || query.toLowerCase().includes('malayalam 2026')) {
+        updateHero(results[0], results);
+    }
+}
+
 // Fetch Trending Songs with Retry
 async function fetchTrending(query, container, append = false) {
+    const cacheKey = query.trim().toLowerCase();
+    const cached = getCachedData('trending', cacheKey);
+    if (cached) {
+        console.log(`[Cache Hit] Trending songs for: ${query}`);
+        renderTrendingData(cached, query, container, append);
+        return;
+    }
+
     try {
         const response = await fetch(`${currentApiBase}/search/songs?query=${encodeURIComponent(query)}&limit=50`);
         const data = await response.json();
@@ -1289,8 +1414,8 @@ async function fetchTrending(query, container, append = false) {
                 return (isNaN(yearB) ? 0 : yearB) - (isNaN(yearA) ? 0 : yearA);
             });
             
-            renderSongs(results, container, append);
-            if (query.toLowerCase().includes('malayalam trending') || query.toLowerCase().includes('malayalam latest') || query.toLowerCase().includes('malayalam 2026')) updateHero(results[0], results);
+            setCachedData('trending', cacheKey, results);
+            renderTrendingData(results, query, container, append);
         } else {
             throw new Error("No results found for " + query);
         }
@@ -1597,7 +1722,7 @@ async function playSong(song) {
     
     // Auto-fetch details if missing downloadUrl
     if (!song.downloadUrl && !song.youtubeId) {
-        // Keep iOS/Android audio session alive by playing silence during fetch
+        // Keep iOS/Android audio session alive by playing silence synchronously inside user event
         try {
             audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
             audio.play().catch(() => {});
@@ -1634,7 +1759,7 @@ async function playSong(song) {
     
     if (!downloadUrl) {
         console.error("No download URL found for song:", song);
-        alert("Sorry, this track is currently unavailable from our main server.");
+        showToast("Sorry, this track is currently unavailable.", "error");
         return;
     }
 
@@ -1652,20 +1777,25 @@ async function playSong(song) {
     }
 
     try {
-        // Reset audio state
-        audio.pause();
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         
-        // Handle CORS for visualizer
-        // Local files (relative paths) don't need crossOrigin=anonymous and it can sometimes cause issues on GitHub Pages
-        // External URLs (starting with http) DO need it for the visualizer to work
-        if (downloadUrl.startsWith('http')) {
-            audio.crossOrigin = "anonymous";
+        if (isIOS) {
+            // iOS/Safari: Change src and play directly WITHOUT pausing or loading, to preserve gesture activation token.
+            audio.src = downloadUrl;
         } else {
-            audio.removeAttribute('crossOrigin');
+            // Standard Desktop/Android reset
+            audio.pause();
+            
+            // Handle CORS for visualizer
+            if (downloadUrl.startsWith('http')) {
+                audio.crossOrigin = "anonymous";
+            } else {
+                audio.removeAttribute('crossOrigin');
+            }
+            
+            audio.src = downloadUrl;
+            audio.load(); // Explicitly call load
         }
-        
-        audio.src = downloadUrl;
-        audio.load(); // Explicitly call load
         
         const playPromise = audio.play();
 
@@ -1680,8 +1810,8 @@ async function playSong(song) {
             }).catch(err => {
                 console.warn("Primary playback failed, trying fallback...", err);
                 
-                // Fallback: Try without CORS if it was enabled
-                if (audio.crossOrigin) {
+                // Fallback: Try without CORS if it was enabled (non-iOS only)
+                if (!isIOS && audio.crossOrigin) {
                     audio.pause();
                     audio.removeAttribute('crossOrigin');
                     audio.load();
@@ -1731,21 +1861,29 @@ function handlePlaybackError(url, error) {
         return;
     }
 
-    // Visual feedback for error
-    const errorMsg = `Failed to play: ${currentSong?.name || 'Unknown'}. This usually happens if the file is missing on GitHub or the server is blocked.`;
+    // Auto-refresh expired URLs once
+    if (currentSong && !currentSong.youtubeId && (!currentSong._refreshAttempts || currentSong._refreshAttempts < 1)) {
+        currentSong._refreshAttempts = (currentSong._refreshAttempts || 0) + 1;
+        console.log(`[Auto-Refresh] Retrying playback with a fresh URL for: ${currentSong.name || currentSong.title}`);
+        showToast("Refreshing stream link...", "warning");
+        currentSong.downloadUrl = null;
+        playSong(currentSong);
+        return;
+    }
+
+    // Proceed to next track if retry failed or if we have already retried
+    const errorMsg = `Failed to play: ${currentSong?.name || 'Unknown'}. Let's skip to the next track.`;
     console.warn(errorMsg);
     
     // Check if it's a local file and provide specific advice
-    if (url.includes(window.location.hostname) && url.includes('/audio/')) {
+    if (url && url.includes(window.location.hostname) && url.includes('/audio/')) {
         console.error("DEBUG: Local file not found. Please ensure the 'audio' folder and its contents were pushed to GitHub.");
     }
 
-    if (currentIndex === 0 || currentIndex === -1) {
-        alert(errorMsg + " Trying next song...");
-    }
+    showToast(errorMsg, "error");
     setTimeout(() => {
         playNextSong();
-    }, 2000);
+    }, 1500);
 }
 
 function updatePlayPauseIcon(playing) {
@@ -2711,9 +2849,32 @@ const eqBtn = document.getElementById('eq-btn');
 const eqModal = document.getElementById('eq-modal');
 const closeEqBtn = document.getElementById('close-eq');
 
+function showEqModalWithIosCheck() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS && eqModal) {
+        const modalContent = eqModal.querySelector('.modal-content');
+        if (modalContent && !modalContent.querySelector('.eq-ios-warning')) {
+            const warning = document.createElement('div');
+            warning.className = 'eq-ios-warning';
+            warning.innerHTML = `<i data-lucide="alert-triangle"></i> <span>iOS Safari disables programmatic Web Audio API features during background playback. Standard settings will apply.</span>`;
+            
+            const header = modalContent.querySelector('.modal-header');
+            if (header) {
+                header.insertAdjacentElement('afterend', warning);
+            } else {
+                modalContent.insertBefore(warning, modalContent.firstChild);
+            }
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
+        }
+    }
+    if (eqModal) eqModal.classList.add('show');
+}
+
 if (eqBtn && eqModal && closeEqBtn) {
     eqBtn.addEventListener('click', () => {
-        eqModal.classList.add('show');
+        showEqModalWithIosCheck();
     });
     closeEqBtn.addEventListener('click', () => {
         eqModal.classList.remove('show');
@@ -3000,8 +3161,7 @@ function initMobilePlayerToggle() {
     if (mobileEqBtn) {
         mobileEqBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const eqModal = document.getElementById('eq-modal');
-            if (eqModal) eqModal.classList.add('show');
+            showEqModalWithIosCheck();
         });
     }
     

@@ -1912,3 +1912,116 @@ input[type="range"]::-webkit-slider-thumb {
     gap: 24px;
 }
 
+/* ─── Premium Custom Toast Notification System ──────────────────────────────── */
+#toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 9999;
+    max-width: 380px;
+    width: calc(100% - 48px);
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    background: rgba(10, 8, 20, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 14px 18px;
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+.toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast.fade-out {
+    transform: translateY(-20px) scale(0.92);
+    opacity: 0;
+}
+
+.toast::before {
+    content: '';
+    width: 4px;
+    height: 18px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.toast-success::before {
+    background: #10b981;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+}
+
+.toast-error::before {
+    background: #ef4444;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+}
+
+.toast-warning::before {
+    background: #f59e0b;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+}
+
+.toast-info::before {
+    background: var(--accent-color, #ffaa00);
+    box-shadow: 0 0 10px var(--current-song-color-glow, rgba(255, 170, 0, 0.4));
+}
+
+/* ─── iOS Equalizer Warning Disclaimer ────────────────────────────────────── */
+.eq-ios-warning {
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px dashed rgba(239, 68, 68, 0.25);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    line-height: 1.4;
+}
+
+.eq-ios-warning i {
+    color: #ef4444;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+}
+
+@media (max-width: 768px) {
+    #toast-container {
+        top: env(safe-area-inset-top, 20px);
+        right: 50%;
+        transform: translateX(50%);
+        max-width: 90%;
+    }
+    
+    .toast {
+        transform: translateY(-120%);
+    }
+    
+    .toast.show {
+        transform: translateY(0);
+    }
+}
+
+
