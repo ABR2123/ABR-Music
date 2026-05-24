@@ -604,6 +604,12 @@ function updateLibraryUI() {
             </td>
         `;
         
+        // Preload song URL on pointerdown for iOS compatibility
+        tr.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.like-track-row-btn')) return;
+            preloadSongUrl(song);
+        });
+
         tr.addEventListener('click', (e) => {
             if (e.target.closest('.like-track-row-btn')) return;
             
@@ -813,6 +819,12 @@ function renderDetailTracks(songs) {
             </td>
         `;
         
+        // Preload song URL on pointerdown for iOS compatibility
+        tr.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.like-track-row-btn')) return;
+            preloadSongUrl(song);
+        });
+
         tr.addEventListener('click', (e) => {
             if (e.target.closest('.like-track-row-btn')) return;
             
@@ -1431,6 +1443,12 @@ function renderSongs(songs, container, append = false) {
             ${youtubeId ? `<button class="open-yt" data-id="${youtubeId}" title="Open on YouTube"><i data-lucide="external-link"></i></button>` : ''}
         `;
         
+        // Preload song URL on pointerdown for iOS compatibility
+        card.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.open-yt')) return;
+            preloadSongUrl(song);
+        });
+
         // Main play on card click
         card.addEventListener('click', (e) => {
             // Prevent click when clicking the Open YouTube button
@@ -1482,6 +1500,37 @@ searchInput.addEventListener('keydown', async (e) => {
         }
     }
 });
+
+// Touch Preloader for iOS compatibility
+async function preloadSongUrl(song) {
+    if (!song || song.downloadUrl || song.youtubeId) return;
+    
+    // Avoid parallel preloads for the same song
+    if (song._isPreloading) return;
+    song._isPreloading = true;
+    
+    try {
+        console.log("[iOS Touch Preload] Preloading URL for:", song.name || song.title);
+        let fetchUrl = `${currentApiBase}/songs?`;
+        if (song.id.startsWith('http://') || song.id.startsWith('https://')) {
+            fetchUrl += `link=${encodeURIComponent(song.id)}`;
+        } else {
+            fetchUrl += `ids=${song.id}`;
+        }
+        const res = await fetch(fetchUrl);
+        const data = await res.json();
+        const fullSong = data.data?.[0] || data?.[0];
+        if (fullSong && fullSong.downloadUrl) {
+            song.downloadUrl = fullSong.downloadUrl;
+            if (fullSong.image) song.image = fullSong.image;
+            console.log("[iOS Touch Preload] Preload success:", song.name || song.title);
+        }
+    } catch (e) {
+        console.warn("[iOS Touch Preload] Preload failed:", e);
+    } finally {
+        delete song._isPreloading;
+    }
+}
 
 // Play Song
 async function playSong(song) {
