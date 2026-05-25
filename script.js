@@ -446,6 +446,15 @@ function initNavigation() {
         });
     }
     
+    // Top Playlists button pill
+    const topPlaylistsBtn = document.getElementById('top-playlists-btn');
+    if (topPlaylistsBtn) {
+        topPlaylistsBtn.addEventListener('click', () => {
+            switchView('playlists-view');
+            showDiscoverPlaylistsFeed();
+        });
+    }
+    
     // Liked Songs playlist item in sidebar
     const playlistList = document.getElementById('playlist-list');
     if (playlistList) {
@@ -971,6 +980,42 @@ function preloadSearchResultsUrls(songs) {
 }
 
 // --- Search & Categories Module ---
+// Local backup fuzzy matching for search queries
+function searchLocalBackup(query) {
+    const terms = query.toLowerCase().trim().split(/\s+/).filter(t => t.length > 0);
+    if (terms.length === 0) return [];
+    
+    // Combine local datasets and likedSongs
+    const allLocal = [...MALAYALAM_JUKEBOX, ...AYYAPPA_JUKEBOX, ...likedSongs];
+    
+    // Deduplicate by ID
+    const seen = new Set();
+    const uniqueLocal = allLocal.filter(song => {
+        if (!song || !song.id) return false;
+        if (seen.has(song.id)) return false;
+        seen.add(song.id);
+        return true;
+    });
+    
+    return uniqueLocal.filter(song => {
+        const title = (song.name || song.title || '').toLowerCase();
+        let artist = '';
+        if (song.artists && song.artists.primary && song.artists.primary[0]) {
+            artist = song.artists.primary[0].name.toLowerCase();
+        } else if (song.primaryArtists) {
+            artist = song.primaryArtists.toLowerCase();
+        } else if (song.singers) {
+            artist = song.singers.toLowerCase();
+        } else if (song.artists && typeof song.artists === 'string') {
+            artist = song.artists.toLowerCase();
+        }
+        
+        const albumName = (song.album?.name || song.album || '').toLowerCase();
+        
+        return terms.every(term => title.includes(term) || artist.includes(term) || albumName.includes(term));
+    });
+}
+
 async function performSearch(query) {
     if (!query) return;
     
@@ -1017,6 +1062,26 @@ async function performSearch(query) {
         
         if (result && result.success && result.data) {
             const results = result.data;
+            const songsList = results.songs?.results || [];
+            const albumsList = results.albums?.results || [];
+            
+            if (songsList.length === 0 && albumsList.length === 0) {
+                // Try local fallback
+                const localSongs = searchLocalBackup(query);
+                if (localSongs.length > 0) {
+                    showToast("Showing local matches for: " + query, "info");
+                    const fallbackData = {
+                        songs: { results: localSongs },
+                        albums: { results: [] },
+                        playlists: { results: [] },
+                        artists: { results: [] }
+                    };
+                    setCachedData('search', cacheKey, fallbackData);
+                    renderSearchResults(fallbackData);
+                    return;
+                }
+            }
+            
             setCachedData('search', cacheKey, results);
             renderSearchResults(results);
         } else {
@@ -1024,19 +1089,25 @@ async function performSearch(query) {
         }
     } catch (e) {
         console.error("Global search failed:", e);
-        // Fallback: search just songs
-        document.getElementById('search-results-songs').innerHTML = `
-            <div class="error-state"><p>Failed to load songs.</p></div>
-        `;
-        document.getElementById('search-results-albums').innerHTML = `
-            <div class="error-state"><p>Failed to load albums.</p></div>
-        `;
-        document.getElementById('search-results-playlists').innerHTML = `
-            <div class="error-state"><p>Failed to load playlists.</p></div>
-        `;
-        document.getElementById('search-results-artists').innerHTML = `
-            <div class="error-state"><p>Failed to load artists.</p></div>
-        `;
+        // Try fallback to local songs
+        const localSongs = searchLocalBackup(query);
+        if (localSongs.length > 0) {
+            showToast("Showing local matches for: " + query, "info");
+            const fallbackData = {
+                songs: { results: localSongs },
+                albums: { results: [] },
+                playlists: { results: [] },
+                artists: { results: [] }
+            };
+            renderSearchResults(fallbackData);
+        } else {
+            document.getElementById('search-results-songs').innerHTML = `
+                <div class="error-state"><p>No results found locally or online.</p></div>
+            `;
+            document.getElementById('search-results-albums').innerHTML = '';
+            document.getElementById('search-results-playlists').innerHTML = '';
+            document.getElementById('search-results-artists').innerHTML = '';
+        }
     }
 }
 
@@ -1232,6 +1303,7 @@ window.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initMobileNavigation();
     initMobilePlayerToggle();
+    initVoiceSearch();
     initJioSaavnImport();
     
     // Render local Jukebox & Ayyappa datasets immediately (no network block)
@@ -1598,21 +1670,244 @@ function renderSongs(songs, container, append = false) {
     lucide.createIcons();
 }
 
-// Search Functionality
+// Search & Suggestions Dropdown System
 let searchTimeout = null;
+const dropdown = document.getElementById('search-suggestions-dropdown');
+
+// Save search query into recent searches history
+function saveRecentSearch(query) {
+    if (!query) return;
+    const cleanQuery = query.trim();
+    if (cleanQuery.length < 2) return;
+    let recents = JSON.parse(localStorage.getItem('abr_recent_searches') || '[]');
+    recents = recents.filter(q => q.toLowerCase() !== cleanQuery.toLowerCase());
+    recents.unshift(cleanQuery);
+    recents = recents.slice(0, 5); // keep top 5
+    localStorage.setItem('abr_recent_searches', JSON.stringify(recents));
+}
+
+// Render search history and trending items
+function renderRecentAndTrendingSuggestions() {
+    if (!dropdown) return;
+    
+    let html = '';
+    
+    // Add Recent Searches from local storage
+    const recents = JSON.parse(localStorage.getItem('abr_recent_searches') || '[]');
+    if (recents.length > 0) {
+        html += `<div class="suggestion-section-title">Recent Searches</div>`;
+        recents.forEach((query) => {
+            html += `
+                <div class="suggestion-item recent-search-item">
+                    <div class="recent-search-left" onclick="runSearchFromSuggestion('${query.replace(/'/g, "\\'")}')">
+                        <i data-lucide="history"></i>
+                        <span class="suggestion-item-title">${query}</span>
+                    </div>
+                    <button class="delete-recent-btn" onclick="deleteRecentSearch('${query.replace(/'/g, "\\'")}', event)" title="Delete recent search">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+            `;
+        });
+    }
+    
+    // Add Popular Categories / Trending Searches
+    html += `<div class="suggestion-section-title" style="${recents.length > 0 ? 'margin-top: 10px;' : ''}">Trending Searches</div>`;
+    const populars = ['Malayalam Jukebox', 'Sabarimala Specials', 'Hindi Romantic', 'Arijit Singh Hits', 'Global Pop'];
+    populars.forEach(term => {
+        let actualQuery = term;
+        if (term === 'Sabarimala Specials') actualQuery = 'Ayyappa Devotional';
+        html += `
+            <div class="suggestion-item" onclick="runSearchFromSuggestion('${actualQuery.replace(/'/g, "\\'")}')">
+                <i data-lucide="trending-up" style="color: var(--accent-color);"></i>
+                <span class="suggestion-item-title">${term}</span>
+            </div>
+        `;
+    });
+    
+    dropdown.innerHTML = html;
+    dropdown.classList.remove('hidden');
+    
+    if (window.lucide) {
+        lucide.createIcons();
+    }
+}
+
+// Global hook functions
+function deleteRecentSearch(query, event) {
+    if (event) event.stopPropagation();
+    let recents = JSON.parse(localStorage.getItem('abr_recent_searches') || '[]');
+    recents = recents.filter(q => q.toLowerCase() !== query.toLowerCase());
+    localStorage.setItem('abr_recent_searches', JSON.stringify(recents));
+    renderRecentAndTrendingSuggestions();
+}
+
+async function runSearchFromSuggestion(term) {
+    if (searchInput) {
+        searchInput.value = term;
+        searchInput.blur();
+    }
+    if (dropdown) dropdown.classList.add('hidden');
+    saveRecentSearch(term);
+    await performSearch(term);
+}
+
+window.deleteRecentSearch = deleteRecentSearch;
+window.runSearchFromSuggestion = runSearchFromSuggestion;
+
+// Fetch suggestions from API and render inline preview
+async function fetchSuggestions(query) {
+    if (!dropdown) return;
+    
+    const cacheKey = query.trim().toLowerCase();
+    const cached = getCachedData('search', cacheKey);
+    
+    let results = null;
+    if (cached) {
+        results = cached;
+    } else {
+        try {
+            const response = await fetch(`${currentApiBase}/search?query=${encodeURIComponent(query)}`);
+            const result = await response.json();
+            if (result && result.success && result.data) {
+                results = result.data;
+                setCachedData('search', cacheKey, results);
+            }
+        } catch (e) {
+            console.warn("Suggestions fetch failed:", e);
+        }
+    }
+    
+    if (results) {
+        renderSuggestionsResults(query, results);
+    }
+}
+
+function renderSuggestionsResults(query, results) {
+    if (!dropdown) return;
+    
+    const songs = results.songs?.results?.slice(0, 4) || [];
+    const artists = results.artists?.results?.slice(0, 3) || [];
+    
+    if (songs.length === 0 && artists.length === 0) {
+        dropdown.innerHTML = `<div style="padding: 12px; text-align: center; color: var(--text-secondary); font-size: 0.85rem;">No matches found for "${query}"</div>`;
+        dropdown.classList.remove('hidden');
+        return;
+    }
+    
+    let html = '';
+    
+    if (songs.length > 0) {
+        html += `<div class="suggestion-section-title">Songs</div>`;
+        songs.forEach(song => {
+            let imgUrl = 'https://via.placeholder.com/50';
+            if (Array.isArray(song.image)) {
+                imgUrl = song.image[1]?.url || song.image[0]?.url || imgUrl;
+            } else if (typeof song.image === 'string') {
+                imgUrl = song.image;
+            }
+            
+            const songName = song.name || song.title || "Unknown Song";
+            let artistName = "Unknown Artist";
+            if (song.artists && song.artists.primary && song.artists.primary[0]) {
+                artistName = song.artists.primary[0].name;
+            } else if (song.primaryArtists) {
+                artistName = song.primaryArtists;
+            } else if (song.artists && typeof song.artists === 'string') {
+                artistName = song.artists;
+            }
+            
+            html += `
+                <div class="suggestion-item song-suggestion" data-song-id="${song.id}">
+                    <img class="suggestion-thumb" src="${imgUrl}" alt="${songName}">
+                    <div class="suggestion-item-info">
+                        <span class="suggestion-item-title">${songName}</span>
+                        <span class="suggestion-item-subtitle">${artistName}</span>
+                    </div>
+                    <i data-lucide="play-circle" style="color: var(--accent-color); width: 18px; height: 18px;"></i>
+                </div>
+            `;
+        });
+    }
+    
+    if (artists.length > 0) {
+        html += `<div class="suggestion-section-title" style="margin-top: 8px;">Artists</div>`;
+        artists.forEach(artist => {
+            let imgUrl = 'https://via.placeholder.com/50';
+            if (Array.isArray(artist.image)) {
+                imgUrl = artist.image[1]?.url || artist.image[0]?.url || imgUrl;
+            } else if (typeof artist.image === 'string') {
+                imgUrl = artist.image;
+            }
+            
+            html += `
+                <div class="suggestion-item artist-suggestion" data-name="${artist.name}">
+                    <img class="suggestion-thumb" src="${imgUrl}" alt="${artist.name}" style="border-radius: 50%;">
+                    <div class="suggestion-item-info">
+                        <span class="suggestion-item-title">${artist.name}</span>
+                        <span class="suggestion-item-subtitle">Artist</span>
+                    </div>
+                    <i data-lucide="arrow-up-left" style="color: var(--text-secondary); width: 16px; height: 16px;"></i>
+                </div>
+            `;
+        });
+    }
+    
+    html += `
+        <div class="suggestion-item see-all-suggestion" onclick="runSearchFromSuggestion('${query.replace(/'/g, "\\'")}')">
+            <span>See all results for "${query}"</span>
+        </div>
+    `;
+    
+    dropdown.innerHTML = html;
+    dropdown.classList.remove('hidden');
+    
+    // Bind click events on suggestions
+    dropdown.querySelectorAll('.suggestion-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (item.classList.contains('see-all-suggestion')) return;
+            
+            e.stopPropagation();
+            if (item.classList.contains('artist-suggestion')) {
+                const artistName = item.getAttribute('data-name');
+                runSearchFromSuggestion(artistName);
+            } else if (item.classList.contains('song-suggestion')) {
+                const songId = item.getAttribute('data-song-id');
+                const matchedSong = songs.find(s => s.id === songId);
+                if (matchedSong) {
+                    playSong(matchedSong);
+                    updateQueue(songs, matchedSong);
+                    if (dropdown) dropdown.classList.add('hidden');
+                    saveRecentSearch(matchedSong.name);
+                }
+            }
+        });
+    });
+    
+    if (window.lucide) {
+        lucide.createIcons();
+    }
+}
+
+// Search input interaction handlers
+searchInput.addEventListener('focus', () => {
+    const query = searchInput.value.trim();
+    if (!query) {
+        renderRecentAndTrendingSuggestions();
+    } else {
+        fetchSuggestions(query);
+    }
+});
+
 searchInput.addEventListener('input', () => {
     clearTimeout(searchTimeout);
     const query = searchInput.value.trim();
     if (query) {
         searchTimeout = setTimeout(async () => {
-            await performSearch(query);
-        }, 350); // 350ms debounce
+            await fetchSuggestions(query);
+        }, 300);
     } else {
-        // Restore browse categories, hide results
-        const categoriesContainer = document.querySelector('.browse-categories-container');
-        const resultsWrapper = document.getElementById('search-results-wrapper');
-        if (categoriesContainer) categoriesContainer.classList.remove('hidden');
-        if (resultsWrapper) resultsWrapper.classList.add('hidden');
+        renderRecentAndTrendingSuggestions();
     }
 });
 
@@ -1621,8 +1916,17 @@ searchInput.addEventListener('keydown', async (e) => {
         clearTimeout(searchTimeout);
         const query = searchInput.value.trim();
         if (query) {
+            if (dropdown) dropdown.classList.add('hidden');
+            saveRecentSearch(query);
             await performSearch(query);
         }
+    }
+});
+
+// Click outside suggestion dropdown to hide it
+document.addEventListener('click', (e) => {
+    if (dropdown && !e.target.closest('.search-container')) {
+        dropdown.classList.add('hidden');
     }
 });
 
@@ -3149,6 +3453,47 @@ function initMobilePlayerToggle() {
                 }
             }
         });
+
+        // iOS style swipe-down to minimize gesture
+        let startY = 0;
+        let currentY = 0;
+        
+        playerBar.addEventListener('touchstart', (e) => {
+            if (playerBar.classList.contains('fullscreen-mobile')) {
+                // Ignore touches on sliders or buttons
+                if (!e.target.closest('button') && !e.target.closest('input') && !e.target.closest('.eq-sliders')) {
+                    startY = e.touches[0].clientY;
+                }
+            }
+        }, { passive: true });
+        
+        playerBar.addEventListener('touchmove', (e) => {
+            if (playerBar.classList.contains('fullscreen-mobile') && startY > 0) {
+                currentY = e.touches[0].clientY;
+                const diffY = currentY - startY;
+                if (diffY > 0) {
+                    // Translate down for physics effect
+                    playerBar.style.transform = `translateY(${diffY}px)`;
+                    playerBar.style.transition = 'none';
+                }
+            }
+        }, { passive: true });
+        
+        playerBar.addEventListener('touchend', () => {
+            if (playerBar.classList.contains('fullscreen-mobile') && startY > 0) {
+                const diffY = currentY - startY;
+                
+                playerBar.style.transform = '';
+                playerBar.style.transition = '';
+                
+                if (diffY > 80) { // 80px threshold to minimize
+                    playerBar.classList.remove('fullscreen-mobile');
+                }
+                
+                startY = 0;
+                currentY = 0;
+            }
+        }, { passive: true });
     }
     
     if (minimizeBtn) {
@@ -3385,4 +3730,85 @@ async function loadHandpickedPlaylistsHome() {
         console.error("Failed to load handpicked playlists on home:", e);
         container.innerHTML = `<p class="error-state">Failed to load handpicked playlists.</p>`;
     }
+}
+
+// Speech Recognition (Voice Search) API Integration
+function initVoiceSearch() {
+    const voiceSearchBtn = document.getElementById('voice-search-btn');
+    const searchInput = document.getElementById('search-input');
+    
+    if (!voiceSearchBtn) return;
+    
+    // Check SpeechRecognition support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        console.warn("SpeechRecognition API is not supported in this browser. Hiding microphone button.");
+        voiceSearchBtn.style.display = 'none';
+        return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'en-IN'; // Default standard locale
+    recognition.interimResults = false;
+    
+    let isListening = false;
+    
+    voiceSearchBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isListening) {
+            recognition.stop();
+        } else {
+            // Touch pre-trigger standard audio (iOS workaround for audio recording context)
+            if (!hasInitializedAudio) {
+                audio.play().then(() => audio.pause()).catch(() => {});
+                hasInitializedAudio = true;
+            }
+            try {
+                recognition.start();
+            } catch (err) {
+                console.error("Speech recognition start failed:", err);
+            }
+        }
+    });
+    
+    recognition.onstart = () => {
+        isListening = true;
+        voiceSearchBtn.classList.add('listening');
+        voiceSearchBtn.title = "Listening...";
+        showToast("Voice Search: Listening...", "info");
+    };
+    
+    recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (searchInput && transcript) {
+            searchInput.value = transcript;
+            showToast(`Voice Search: "${transcript}"`, "success");
+            
+            // Trigger suggestion dropdown close and run full search
+            const dropdown = document.getElementById('search-suggestions-dropdown');
+            if (dropdown) dropdown.classList.add('hidden');
+            
+            saveRecentSearch(transcript);
+            await performSearch(transcript);
+        }
+    };
+    
+    recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === 'not-allowed') {
+            showToast("Voice search permission denied.", "error");
+        } else {
+            showToast("Voice search failed: " + event.error, "error");
+        }
+        voiceSearchBtn.classList.remove('listening');
+        voiceSearchBtn.title = "Search with Voice";
+        isListening = false;
+    };
+    
+    recognition.onend = () => {
+        voiceSearchBtn.classList.remove('listening');
+        voiceSearchBtn.title = "Search with Voice";
+        isListening = false;
+    };
 }

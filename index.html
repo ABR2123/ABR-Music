@@ -71,8 +71,14 @@
             <header class="top-bar">
                 <div class="search-container">
                     <i data-lucide="search"></i>
-                    <input type="text" id="search-input" placeholder="Search for songs, artists, or albums...">
+                    <input type="text" id="search-input" placeholder="Search for songs, artists, or albums..." autocomplete="off">
+                    <button id="voice-search-btn" class="voice-search-btn" title="Search with Voice"><i data-lucide="mic"></i></button>
+                    <div id="search-suggestions-dropdown" class="search-suggestions-dropdown hidden"></div>
                 </div>
+                <button class="top-playlists-btn" id="top-playlists-btn" title="View Playlists">
+                    <i data-lucide="list-music"></i>
+                    <span>Playlists</span>
+                </button>
                 <div class="user-profile" id="user-profile-container">
                     <div class="avatar" id="current-user-avatar">RP</div>
                     <div class="user-dropdown" id="user-dropdown">
