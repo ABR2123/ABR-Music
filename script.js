@@ -15,6 +15,7 @@ let isPlaying = false;
 let isShuffle = false;
 let isRepeat = 'all'; // 'none' | 'one' | 'all'
 let currentHeroSongs = [];
+let currentHeroSong = null;
 let audioContext, analyser, dataArray, source;
 let eqFilters = [];
 let hasInitializedAudio = false; // Flag for iOS first interaction
@@ -31,6 +32,14 @@ const apiCache = {
     artists: {}
 };
 const CACHE_TTL = 300000; // 5 minutes in milliseconds
+const HERO_STORAGE_KEY = 'abr_malayalam_hero_song';
+const HERO_REFRESH_INTERVAL = 900000; // 15 minutes
+const MALAYALAM_HERO_QUERIES = [
+    'malayalam trending 2026',
+    'malayalam latest hits 2026',
+    'malayalam 2026'
+];
+let heroRefreshTimer = null;
 
 function getCachedData(type, key) {
     const cached = apiCache[type] && apiCache[type][key];
@@ -1310,6 +1319,11 @@ window.addEventListener('DOMContentLoaded', () => {
     renderSongs(MALAYALAM_JUKEBOX, document.getElementById('malayalam-jukebox'));
     renderSongs(AYYAPPA_JUKEBOX, document.getElementById('ayyappa-songs'));
     
+    // Initialize hero banner click handler and queue immediately on load (pre-load fallback)
+    currentHeroSongs = MALAYALAM_JUKEBOX;
+    updateHero(MALAYALAM_JUKEBOX[0], MALAYALAM_JUKEBOX);
+    restoreHeroFromStorage();
+    
     if (window.lucide) {
         lucide.createIcons();
     }
@@ -1327,6 +1341,9 @@ window.addEventListener('DOMContentLoaded', () => {
         
         // Set up lazy-loading for screen categories
         initLazyLoading();
+
+        // Load & auto-refresh trending Malayalam hero banner
+        initMalayalamHeroBanner();
         
         // Inject and observe all dynamic footer categories
         addMoreSections();
@@ -1447,8 +1464,128 @@ async function addMoreSections() {
 function renderTrendingData(results, query, container, append) {
     renderSongs(results, container, append);
     if (query.toLowerCase().includes('malayalam trending') || query.toLowerCase().includes('malayalam latest') || query.toLowerCase().includes('malayalam 2026')) {
-        updateHero(results[0], results);
+        applyHeroTrending(results[0], results);
     }
+}
+
+function getSongArtistName(song) {
+    if (!song) return 'Unknown Artist';
+    if (song.artists?.primary?.[0]?.name) return song.artists.primary[0].name;
+    if (song.primaryArtists) return song.primaryArtists;
+    if (song.singers) return song.singers;
+    if (typeof song.artists === 'string') return song.artists;
+    if (Array.isArray(song.artists)) return song.artists.map(a => a.name).join(', ');
+    return 'Unknown Artist';
+}
+
+function getSongImageUrl(song, fallback = '') {
+    if (!song) return fallback;
+    if (Array.isArray(song.image)) {
+        return song.image[2]?.url || song.image[1]?.url || song.image[0]?.url || fallback;
+    }
+    if (typeof song.image === 'string' && song.image) return song.image;
+    return fallback;
+}
+
+function parseTrendingResults(data) {
+    if (data?.data?.results && Array.isArray(data.data.results)) return data.data.results;
+    if (data?.data && Array.isArray(data.data)) return data.data;
+    if (data?.results && Array.isArray(data.results)) return data.results;
+    if (data?.success && data?.data?.results) return data.data.results;
+    return [];
+}
+
+function sortTrendingByYear(results) {
+    return [...results].sort((a, b) => {
+        const yearA = a?.year ? parseInt(a.year) : 0;
+        const yearB = b?.year ? parseInt(b.year) : 0;
+        return (isNaN(yearB) ? 0 : yearB) - (isNaN(yearA) ? 0 : yearA);
+    });
+}
+
+function saveHeroToStorage(song, songs) {
+    try {
+        localStorage.setItem(HERO_STORAGE_KEY, JSON.stringify({
+            song,
+            songs: songs.slice(0, 30),
+            updatedAt: Date.now()
+        }));
+    } catch (e) {}
+}
+
+function restoreHeroFromStorage() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(HERO_STORAGE_KEY));
+        if (saved?.song && saved?.songs?.length) {
+            updateHero(saved.song, saved.songs, { skipFlash: true });
+        }
+    } catch (e) {}
+}
+
+function applyHeroTrending(song, songsList) {
+    if (!song) return;
+    const prevId = currentHeroSong?.id;
+    updateHero(song, songsList, { skipFlash: prevId === song.id });
+    saveHeroToStorage(song, songsList);
+
+    const malContainer = document.getElementById('malayalam-songs');
+    if (malContainer && !malContainer.getAttribute('data-loaded')) {
+        renderSongs(songsList, malContainer);
+        malContainer.setAttribute('data-loaded', 'true');
+    }
+}
+
+async function fetchTrendingMalayalamHero(forceRefresh = false) {
+    if (forceRefresh) {
+        MALAYALAM_HERO_QUERIES.forEach(q => {
+            delete apiCache.trending[q.trim().toLowerCase()];
+        });
+    }
+
+    for (const query of MALAYALAM_HERO_QUERIES) {
+        const cacheKey = query.trim().toLowerCase();
+        if (!forceRefresh) {
+            const cached = getCachedData('trending', cacheKey);
+            if (cached?.length) {
+                applyHeroTrending(cached[0], cached);
+                return;
+            }
+        }
+
+        try {
+            const response = await fetch(`${currentApiBase}/search/songs?query=${encodeURIComponent(query)}&limit=50`);
+            const data = await response.json();
+            let results = sortTrendingByYear(parseTrendingResults(data));
+
+            if (results.length > 0) {
+                console.log(`[Hero] Trending Malayalam: "${results[0].name}" via "${query}"`);
+                setCachedData('trending', cacheKey, results);
+                applyHeroTrending(results[0], results);
+                return;
+            }
+        } catch (e) {
+            console.warn(`[Hero] Failed query "${query}":`, e);
+        }
+    }
+}
+
+function initMalayalamHeroBanner() {
+    fetchTrendingMalayalamHero(false);
+
+    if (heroRefreshTimer) clearInterval(heroRefreshTimer);
+    heroRefreshTimer = setInterval(() => fetchTrendingMalayalamHero(true), HERO_REFRESH_INTERVAL);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        try {
+            const saved = JSON.parse(localStorage.getItem(HERO_STORAGE_KEY) || '{}');
+            if (!saved.updatedAt || Date.now() - saved.updatedAt > CACHE_TTL) {
+                fetchTrendingMalayalamHero(true);
+            }
+        } catch (e) {
+            fetchTrendingMalayalamHero(true);
+        }
+    });
 }
 
 // Fetch Trending Songs with Retry
@@ -1466,25 +1603,11 @@ async function fetchTrending(query, container, append = false) {
         const data = await response.json();
         
         // Handle different API formats (some wrap results in 'data', some don't)
-        let results = [];
-        if (data?.data?.results && Array.isArray(data.data.results)) {
-            results = data.data.results;
-        } else if (data?.data && Array.isArray(data.data)) {
-            results = data.data;
-        } else if (data?.results && Array.isArray(data.results)) {
-            results = data.results;
-        } else if (data?.success && data?.data?.results) {
-            results = data.data.results;
-        }
+        let results = parseTrendingResults(data);
         
         if (results && results.length > 0) {
             console.log(`Found ${results.length} results for: ${query}`);
-            // Sort by year to ensure the newest songs are at the top (with safety checks)
-            results.sort((a, b) => {
-                const yearA = a && a.year ? parseInt(a.year) : 0;
-                const yearB = b && b.year ? parseInt(b.year) : 0;
-                return (isNaN(yearB) ? 0 : yearB) - (isNaN(yearA) ? 0 : yearA);
-            });
+            results = sortTrendingByYear(results);
             
             setCachedData('trending', cacheKey, results);
             renderTrendingData(results, query, container, append);
@@ -1505,73 +1628,85 @@ async function fetchTrending(query, container, append = false) {
     }
 }
 
-function updateHero(song, songsList = null) {
+function updateHero(song, songsList = null, options = {}) {
     if (!song) return;
+    const { skipFlash = false } = options;
+    const songChanged = currentHeroSong?.id !== song.id;
+    currentHeroSong = song;
     if (songsList) {
         currentHeroSongs = songsList;
     }
-    const heroTitle = document.querySelector('.hero h1');
-    const heroPara = document.querySelector('.hero p');
+
+    const heroTitle = document.getElementById('hero-song-title') || document.querySelector('.hero h1');
+    const heroPara = document.getElementById('hero-song-artist') || document.querySelector('.hero p:not(.hero-label)');
     const heroSection = document.getElementById('hero');
-    
-    heroTitle.innerText = song.name;
-    
-    let artistName = "";
-    if (song.artists && song.artists.primary && song.artists.primary[0]) {
-        artistName = song.artists.primary[0].name;
-    } else if (song.artists && typeof song.artists === 'string') {
-        artistName = song.artists;
-    } else if (song.artists && Array.isArray(song.artists)) {
-        artistName = song.artists.map(a => a.name).join(', ');
-    } else {
-        artistName = "Unknown Artist";
+    const heroBadge = document.getElementById('hero-badge') || document.querySelector('.hero .badge');
+
+    const songName = song.name || song.title || 'Unknown Song';
+    const artistName = getSongArtistName(song);
+    const albumName = song.album?.name || '';
+
+    if (heroTitle) {
+        heroTitle.innerText = songName;
+        heroTitle.style.cursor = 'pointer';
+        heroTitle.onclick = () => playSong(song);
     }
-    
-    if (currentSong && song.id === currentSong.id) {
-        heroPara.innerText = artistName;
-    } else {
-        heroPara.innerText = `Featured Release • ${artistName}`;
+
+    if (heroPara) {
+        if (currentSong && song.id === currentSong.id && isPlaying) {
+            heroPara.innerText = `Now Playing • ${artistName}${albumName ? ` • ${albumName}` : ''}`;
+        } else {
+            heroPara.innerText = albumName
+                ? `${artistName} • ${albumName}`
+                : `Trending Malayalam Song • ${artistName}`;
+        }
     }
-    
-    let imgUrl = 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=2070&auto=format&fit=crop';
-    if (Array.isArray(song.image)) {
-        imgUrl = song.image[2]?.url || song.image[1]?.url || song.image[0]?.url;
+
+    const imgUrl = getSongImageUrl(song);
+    if (heroSection && imgUrl) {
+        heroSection.style.backgroundImage = `url(${imgUrl})`;
+        if (songChanged && !skipFlash) {
+            heroSection.classList.remove('hero-updated');
+            void heroSection.offsetWidth;
+            heroSection.classList.add('hero-updated');
+        }
     }
-    
-    heroSection.style.backgroundImage = `url(${imgUrl})`;
-    
-    // Make the title clickable to search for more from this category
-    heroTitle.style.cursor = 'pointer';
-    heroTitle.onclick = () => searchByLang('Malayalam');
-    
-    const heroBadge = document.querySelector('.hero .badge');
+
+    const isCurrentSong = currentSong && song.id === currentSong.id;
+
     if (heroBadge) {
-        heroBadge.innerText = (currentSong && song.id === currentSong.id && isPlaying) ? "Now Playing" : "Featured";
+        heroBadge.innerHTML = isCurrentSong && isPlaying
+            ? '<span class="badge-pulse"></span> Now Playing'
+            : '<span class="badge-pulse"></span> Trending Now';
     }
-    
+
     const heroPlayBtn = document.getElementById('hero-play');
     if (heroPlayBtn) {
-        if (currentSong && song.id === currentSong.id && isPlaying) {
-            heroPlayBtn.innerHTML = `<i data-lucide="pause"></i> Pause`;
-        } else {
-            heroPlayBtn.innerHTML = `<i data-lucide="play"></i> Play Now`;
-        }
-    }
-    
-    document.getElementById('hero-play').onclick = (e) => {
-        e.stopPropagation();
-        if (currentSong && song.id === currentSong.id) {
-            playPauseBtn.click();
-        } else {
-            playSong(song);
-            if (currentHeroSongs && currentHeroSongs.length > 0) {
-                updateQueue(currentHeroSongs, song);
-                updateTracksPlayingStates();
+        heroPlayBtn.innerHTML = isCurrentSong && isPlaying
+            ? `<i data-lucide="pause"></i> Pause`
+            : `<i data-lucide="play"></i> Play Now`;
+
+        heroPlayBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (currentSong && song.id === currentSong.id) {
+                const playPauseBtn = document.getElementById('play-pause-btn');
+                if (playPauseBtn) playPauseBtn.click();
+            } else {
+                playSong(song);
+                if (currentHeroSongs?.length > 0) {
+                    const idx = currentHeroSongs.findIndex(s => s.id === song.id);
+                    updateQueue(idx > -1 ? currentHeroSongs : [song], song);
+                    updateTracksPlayingStates();
+                } else {
+                    updateQueue([song], song);
+                }
             }
-        }
-    };
-    
-    lucide.createIcons();
+        };
+    }
+
+    if (window.lucide) {
+        lucide.createIcons();
+    }
 }
 
 function renderSongs(songs, container, append = false) {
@@ -2197,17 +2332,26 @@ function updatePlayPauseIcon(playing) {
     if (playPauseBtn) playPauseBtn.innerHTML = iconHtml;
     if (playPauseBtnMobile) playPauseBtnMobile.innerHTML = iconHtml;
     
-    // Sync Hero section play button and badge if it displays the current song
-    const heroTitle = document.querySelector('.hero h1');
+    // Sync Hero section play button and badge
     const heroPlayBtn = document.getElementById('hero-play');
-    if (heroTitle && heroPlayBtn && currentSong) {
-        if (heroTitle.innerText.trim() === currentSong.name.trim()) {
-            heroPlayBtn.innerHTML = playing ? `<i data-lucide="pause"></i> Pause` : `<i data-lucide="play"></i> Play Now`;
-            const heroBadge = document.querySelector('.hero .badge');
-            if (heroBadge) {
-                heroBadge.innerText = playing ? "Now Playing" : "Featured";
-            }
+    if (heroPlayBtn && currentHeroSong) {
+        const isCurrentHeroSongPlaying = currentSong && currentHeroSongs && currentHeroSongs.some(s => s.id === currentSong.id) && playing;
+        heroPlayBtn.innerHTML = isCurrentHeroSongPlaying ? `<i data-lucide="pause"></i> Pause` : `<i data-lucide="play"></i> Play Now`;
+        const heroBadge = document.getElementById('hero-badge') || document.querySelector('.hero .badge');
+        if (heroBadge) {
+            heroBadge.innerHTML = isCurrentHeroSongPlaying
+                ? '<span class="badge-pulse"></span> Now Playing'
+                : '<span class="badge-pulse"></span> Trending Now';
         }
+        const heroPara = document.getElementById('hero-song-artist');
+        if (heroPara && currentHeroSong) {
+            const artistName = getSongArtistName(currentHeroSong);
+            const albumName = currentHeroSong.album?.name || '';
+            heroPara.innerText = isCurrentHeroSongPlaying
+                ? `Now Playing • ${artistName}${albumName ? ` • ${albumName}` : ''}`
+                : (albumName ? `${artistName} • ${albumName}` : `Trending Malayalam Song • ${artistName}`);
+        }
+        if (window.lucide) lucide.createIcons();
     }
     
     // Toggle vinyl spin class state
