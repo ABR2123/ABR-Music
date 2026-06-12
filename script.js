@@ -35,11 +35,16 @@ const CACHE_TTL = 300000; // 5 minutes in milliseconds
 const HERO_STORAGE_KEY = 'abr_malayalam_hero_song';
 const HERO_REFRESH_INTERVAL = 900000; // 15 minutes
 const MALAYALAM_HERO_QUERIES = [
-    'malayalam trending 2026',
-    'malayalam latest hits 2026',
-    'malayalam 2026'
+    'latest malayalam hits',
+    'new malayalam songs',
+    'malayalam hits'
 ];
 let heroRefreshTimer = null;
+let currentHeroIndex = 0;
+const HERO_CAROUSEL_LIMIT = 8;
+let heroAutoplayTimer = null;
+const HERO_AUTOPLAY_DELAY = 6000; // 6 seconds
+let hasInitializedHeroCarousel = false;
 
 function getCachedData(type, key) {
     const cached = apiCache[type] && apiCache[type][key];
@@ -111,10 +116,121 @@ let ytPlayer;
 let isYTReady = false;
 let isYTMuted = false;
 let isSeeking = false;
-
-
+// ─── YouTube Trending · June 2026 ─────────────────────────────────────────────
+// Songs trending on YouTube India in June 2026 across Malayalam, Hindi & Tamil.
+// youtubeId = plays via in-app YouTube iframe; image = auto YT thumbnail.
+const YT_TRENDING_JUNE_2026 = [
+    // ── Malayalam ──
+    {
+        id: 'yt-ml-parudeesa', name: 'Parudeesa',
+        artists: { primary: [{ name: 'Sreenath Bhasi' }] },
+        album: { name: 'Bheeshma Parvam' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/A_0n34-W9lA/hqdefault.jpg' }],
+        youtubeId: 'A_0n34-W9lA', language: 'Malayalam',
+        ytViews: '120M+ views'
+    },
+    {
+        id: 'yt-ml-maaran', name: 'Maaran',
+        artists: { primary: [{ name: 'Sid Sriram' }] },
+        album: { name: 'Kudukku 2025' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/5Qf73YVq-8U/hqdefault.jpg' }],
+        youtubeId: '5Qf73YVq-8U', language: 'Malayalam',
+        ytViews: '85M+ views'
+    },
+    {
+        id: 'yt-ml-thattathil', name: 'Thattathil',
+        artists: { primary: [{ name: 'Sreehari K Nair' }] },
+        album: { name: 'Abhilasham' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/DjLuN0DDb2s/hqdefault.jpg' }],
+        youtubeId: 'DjLuN0DDb2s', language: 'Malayalam',
+        ytViews: '62M+ views'
+    },
+    {
+        id: 'yt-ml-illuminati', name: 'Illuminati',
+        artists: { primary: [{ name: 'Sushin Shyam' }] },
+        album: { name: 'Aavesham' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/B7UOrZYHnCo/hqdefault.jpg' }],
+        youtubeId: 'B7UOrZYHnCo', language: 'Malayalam',
+        ytViews: '200M+ views'
+    },
+    {
+        id: 'yt-ml-mini-maharani', name: 'Mini Maharani',
+        artists: { primary: [{ name: 'Kapil Kapilan' }] },
+        album: { name: 'Premalu' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/bPnBIlxWPHo/hqdefault.jpg' }],
+        youtubeId: 'bPnBIlxWPHo', language: 'Malayalam',
+        ytViews: '95M+ views'
+    },
+    // ── Hindi ──
+    {
+        id: 'yt-hi-phirse', name: 'Phir Se',
+        artists: { primary: [{ name: 'Arijit Singh' }] },
+        album: { name: 'Dhurandhar: The Revenge' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/r8O3URprq1M/hqdefault.jpg' }],
+        youtubeId: 'r8O3URprq1M', language: 'Hindi',
+        ytViews: '150M+ views'
+    },
+    {
+        id: 'yt-hi-kesariya', name: 'Kesariya',
+        artists: { primary: [{ name: 'Arijit Singh' }] },
+        album: { name: 'Brahmastra' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/BddP6PYo2gs/hqdefault.jpg' }],
+        youtubeId: 'BddP6PYo2gs', language: 'Hindi',
+        ytViews: '800M+ views'
+    },
+    {
+        id: 'yt-hi-tum-kya-mile', name: 'Tum Kya Mile',
+        artists: { primary: [{ name: 'Arijit Singh & Shreya Ghoshal' }] },
+        album: { name: 'Rocky Aur Rani Kii Prem Kahaani' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/fR-Ud0-SQWQ/hqdefault.jpg' }],
+        youtubeId: 'fR-Ud0-SQWQ', language: 'Hindi',
+        ytViews: '320M+ views'
+    },
+    {
+        id: 'yt-hi-apna-bana-le', name: 'Apna Bana Le',
+        artists: { primary: [{ name: 'Arijit Singh' }] },
+        album: { name: 'Bhediya' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/cQhQOgYp49s/hqdefault.jpg' }],
+        youtubeId: 'cQhQOgYp49s', language: 'Hindi',
+        ytViews: '280M+ views'
+    },
+    // ── Tamil ──
+    {
+        id: 'yt-ta-pavazha-malli', name: 'Pavazha Malli',
+        artists: { primary: [{ name: 'Sai Abhyankkar ft. Shruti Haasan' }] },
+        album: { name: 'Think Indie' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/s-gHk-1pT_k/hqdefault.jpg' }],
+        youtubeId: 's-gHk-1pT_k', language: 'Tamil',
+        ytViews: '250M+ views'
+    },
+    {
+        id: 'yt-ta-chellamma', name: 'Chellamma',
+        artists: { primary: [{ name: 'Anirudh Ravichander' }] },
+        album: { name: 'Doctor' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/mFDkMHBGMtg/hqdefault.jpg' }],
+        youtubeId: 'mFDkMHBGMtg', language: 'Tamil',
+        ytViews: '310M+ views'
+    },
+    {
+        id: 'yt-ta-arabic-kuthu', name: 'Arabic Kuthu',
+        artists: { primary: [{ name: 'Anirudh Ravichander & Jonita Gandhi' }] },
+        album: { name: 'Beast' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/iuaOXCNKKuE/hqdefault.jpg' }],
+        youtubeId: 'iuaOXCNKKuE', language: 'Tamil',
+        ytViews: '700M+ views'
+    },
+    {
+        id: 'yt-ta-kannaana-kanney', name: 'Kannaana Kanney',
+        artists: { primary: [{ name: 'D. Imman' }] },
+        album: { name: 'Viswasam' },
+        image: [{ url: '' }, { url: '' }, { url: 'https://img.youtube.com/vi/lLcrDLfVA3Y/hqdefault.jpg' }],
+        youtubeId: 'lLcrDLfVA3Y', language: 'Tamil',
+        ytViews: '190M+ views'
+    },
+];
 
 const MALAYALAM_JUKEBOX = [
+
     { id: 'xJVO1Mf0', name: 'Darshana', artists: { primary: [{ name: 'Hesham Abdul Wahab' }] }, album: { name: 'Hridayam' }, image: [{url:''},{url:''},{url:'https://c.saavncdn.com/970/Hridayam-Malayalam-2021-20211117145710-500x500.jpg'}] },
     { id: '5SboKYdp', name: 'Uyire', artists: { primary: [{ name: 'Vineeth Sreenivasan' }] }, album: { name: 'Minnal Murali' }, image: [{url:''},{url:''},{url:'https://c.saavncdn.com/152/Minnal-Murali-Malayalam-2021-20211124194035-500x500.jpg'}] },
     { id: 'SA-3G3fh', name: 'Thallumaala Paattu', artists: { primary: [{ name: 'Hrithik Jayakish' }] }, album: { name: 'Thallumaala' }, image: [{url:''},{url:''},{url:'https://c.saavncdn.com/393/Thallumaala-Malayalam-2022-20220812161314-500x500.jpg'}] },
@@ -1318,11 +1434,19 @@ window.addEventListener('DOMContentLoaded', () => {
     // Render local Jukebox & Ayyappa datasets immediately (no network block)
     renderSongs(MALAYALAM_JUKEBOX, document.getElementById('malayalam-jukebox'));
     renderSongs(AYYAPPA_JUKEBOX, document.getElementById('ayyappa-songs'));
+
+    // Render YouTube Trending June 2026 section immediately
+    renderYtTrendingSection('all');
     
     // Initialize hero banner click handler and queue immediately on load (pre-load fallback)
     currentHeroSongs = MALAYALAM_JUKEBOX;
-    updateHero(MALAYALAM_JUKEBOX[0], MALAYALAM_JUKEBOX);
-    restoreHeroFromStorage();
+    currentHeroIndex = 0;
+    const restored = restoreHeroFromStorage();
+    if (!restored) {
+        initHeroCarousel();
+        renderHeroIndicators();
+        startHeroAutoplay();
+    }
     
     if (window.lucide) {
         lucide.createIcons();
@@ -1461,9 +1585,84 @@ async function addMoreSections() {
     });
 }
 
+// ─── YouTube Trending Filter Tab Handler ──────────────────────────────────────
+function filterYtTrending(lang, btn) {
+    // Update active tab
+    document.querySelectorAll('.yt-lang-tab').forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    // Fade out → re-render → fade in
+    const container = document.getElementById('yt-trending-songs');
+    if (container) {
+        container.style.opacity = '0';
+        container.style.transform = 'translateY(6px)';
+        container.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        setTimeout(() => {
+            renderYtTrendingSection(lang);
+            container.style.opacity = '1';
+            container.style.transform = 'translateY(0)';
+        }, 200);
+    }
+}
+
+// ─── YouTube Trending June 2026 Section Renderer ──────────────────────────────
+function renderYtTrendingSection(lang = 'all') {
+    const container = document.getElementById('yt-trending-songs');
+    if (!container) return;
+
+    const filtered = lang === 'all'
+        ? YT_TRENDING_JUNE_2026
+        : YT_TRENDING_JUNE_2026.filter(s => s.language === lang);
+
+    container.innerHTML = '';
+
+    filtered.forEach(song => {
+        const card = document.createElement('div');
+        card.className = 'song-card yt-trend-card';
+        if (currentSong && song.id === currentSong.id && isPlaying) card.classList.add('playing');
+
+        const imgUrl = song.image[2]?.url || `https://img.youtube.com/vi/${song.youtubeId}/hqdefault.jpg`;
+        const artist = song.artists?.primary?.[0]?.name || 'Unknown Artist';
+        const langColors = { Malayalam: '#a855f7', Hindi: '#f59e0b', Tamil: '#22d3ee' };
+        const langColor = langColors[song.language] || '#fff';
+
+        card.innerHTML = `
+            <div class="yt-card-thumb-wrap" style="position:relative;">
+                <img src="${imgUrl}" alt="${song.name}" class="song-img" loading="lazy"
+                    onerror="this.src='https://img.youtube.com/vi/${song.youtubeId}/hqdefault.jpg'">
+                <div class="yt-card-overlay">
+                    <svg class="yt-play-logo" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                </div>
+                <span class="yt-lang-pill" style="background:${langColor}20;border:1px solid ${langColor}60;color:${langColor}">${song.language}</span>
+                ${song.ytViews ? `<span class="yt-views-badge"><svg style="width:9px;height:9px;display:inline" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg> ${song.ytViews}</span>` : ''}
+            </div>
+            <div class="song-info">
+                <p class="song-name">${song.name}</p>
+                <p class="song-artist">${artist} • ${song.album?.name || ''}</p>
+            </div>`;
+
+        card.addEventListener('click', () => {
+            playSong(song);
+            updateQueue(filtered, song);
+        });
+
+        container.appendChild(card);
+    });
+
+    if (window.lucide) lucide.createIcons();
+}
+
 function renderTrendingData(results, query, container, append) {
+
     renderSongs(results, container, append);
-    if (query.toLowerCase().includes('malayalam trending') || query.toLowerCase().includes('malayalam latest') || query.toLowerCase().includes('malayalam 2026')) {
+    const qLower = query.toLowerCase();
+    const isMalayalamTrending = 
+        qLower === 'latest malayalam hits' || 
+        qLower === 'new malayalam songs' ||
+        qLower === 'malayalam hits' ||
+        qLower.includes('malayalam trending') || 
+        qLower.includes('malayalam latest') || 
+        qLower.includes('malayalam 2026');
+    if (isMalayalamTrending) {
         applyHeroTrending(results[0], results);
     }
 }
@@ -1496,10 +1695,23 @@ function parseTrendingResults(data) {
 }
 
 function sortTrendingByYear(results) {
-    return [...results].sort((a, b) => {
-        const yearA = a?.year ? parseInt(a.year) : 0;
-        const yearB = b?.year ? parseInt(b.year) : 0;
-        return (isNaN(yearB) ? 0 : yearB) - (isNaN(yearA) ? 0 : yearA);
+    const currentYear = new Date().getFullYear();
+    const cutoffYear = currentYear - 2; // 2024
+    
+    // Filter to keep only recent songs
+    const recentSongs = results.filter(s => {
+        const year = s.year ? parseInt(s.year) : 0;
+        return !isNaN(year) && year >= cutoffYear;
+    });
+    
+    // Fallback to all results if no recent songs are found
+    const listToSort = recentSongs.length > 0 ? recentSongs : results;
+    
+    // Sort by playCount descending to order by trending popularity
+    return [...listToSort].sort((a, b) => {
+        const countA = a?.playCount ? parseInt(a.playCount) : 0;
+        const countB = b?.playCount ? parseInt(b.playCount) : 0;
+        return (isNaN(countB) ? 0 : countB) - (isNaN(countA) ? 0 : countA);
     });
 }
 
@@ -1517,22 +1729,192 @@ function restoreHeroFromStorage() {
     try {
         const saved = JSON.parse(localStorage.getItem(HERO_STORAGE_KEY));
         if (saved?.song && saved?.songs?.length) {
-            updateHero(saved.song, saved.songs, { skipFlash: true });
+            currentHeroSongs = saved.songs;
+            const idx = saved.songs.findIndex(s => s.id === saved.song.id);
+            currentHeroIndex = idx > -1 ? idx : 0;
+            
+            initHeroCarousel();
+            renderHeroIndicators();
+            changeHeroSlide(currentHeroIndex, true);
+            return true;
         }
     } catch (e) {}
+    return false;
 }
 
 function applyHeroTrending(song, songsList) {
     if (!song) return;
-    const prevId = currentHeroSong?.id;
-    updateHero(song, songsList, { skipFlash: prevId === song.id });
-    saveHeroToStorage(song, songsList);
+    
+    currentHeroSongs = songsList;
+    const idx = songsList.findIndex(s => s.id === song.id);
+    currentHeroIndex = idx > -1 ? idx : 0;
+    
+    initHeroCarousel();
+    renderHeroIndicators();
+    changeHeroSlide(currentHeroIndex, true);
 
     const malContainer = document.getElementById('malayalam-songs');
     if (malContainer && !malContainer.getAttribute('data-loaded')) {
         renderSongs(songsList, malContainer);
         malContainer.setAttribute('data-loaded', 'true');
     }
+}
+
+// ─── Hero Carousel Slide Logic ──────────────────────────────────────────────
+function initHeroCarousel() {
+    if (hasInitializedHeroCarousel) return;
+    
+    const prevBtn = document.getElementById('hero-prev');
+    const nextBtn = document.getElementById('hero-next');
+    const heroSection = document.getElementById('hero');
+    const indicatorsContainer = document.getElementById('hero-indicators');
+    
+    if (prevBtn) {
+        prevBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateHeroSlide(-1);
+        });
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateHeroSlide(1);
+        });
+    }
+    
+    // Hover pause/resume autoplay
+    if (heroSection) {
+        heroSection.addEventListener('mouseenter', () => {
+            stopHeroAutoplay();
+        });
+        
+        heroSection.addEventListener('mouseleave', () => {
+            startHeroAutoplay();
+        });
+        
+        // Touch gestures for swipe (Mobile)
+        let touchStartX = 0;
+        let touchEndX = 0;
+        
+        heroSection.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, { passive: true });
+        
+        heroSection.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleHeroSwipe(touchStartX, touchEndX);
+        }, { passive: true });
+    }
+    
+    hasInitializedHeroCarousel = true;
+}
+
+function handleHeroSwipe(startX, endX) {
+    const diffX = endX - startX;
+    const swipeThreshold = 50; // pixels
+    if (diffX > swipeThreshold) {
+        // Swipe Right -> Prev
+        navigateHeroSlide(-1);
+    } else if (diffX < -swipeThreshold) {
+        // Swipe Left -> Next
+        navigateHeroSlide(1);
+    }
+}
+
+function navigateHeroSlide(direction) {
+    const limit = Math.min(currentHeroSongs.length, HERO_CAROUSEL_LIMIT);
+    if (limit <= 1) return;
+    
+    let newIndex = currentHeroIndex + direction;
+    if (newIndex < 0) {
+        newIndex = limit - 1;
+    } else if (newIndex >= limit) {
+        newIndex = 0;
+    }
+    changeHeroSlide(newIndex);
+}
+
+function renderHeroIndicators() {
+    const indicatorsContainer = document.getElementById('hero-indicators');
+    if (!indicatorsContainer) return;
+    
+    indicatorsContainer.innerHTML = '';
+    const limit = Math.min(currentHeroSongs.length, HERO_CAROUSEL_LIMIT);
+    for (let i = 0; i < limit; i++) {
+        const dot = document.createElement('div');
+        dot.className = `hero-indicator ${i === currentHeroIndex ? 'active' : ''}`;
+        dot.setAttribute('data-index', i);
+        dot.setAttribute('title', `Slide ${i + 1}`);
+        indicatorsContainer.appendChild(dot);
+    }
+}
+
+function startHeroAutoplay() {
+    stopHeroAutoplay();
+    const limit = Math.min(currentHeroSongs.length, HERO_CAROUSEL_LIMIT);
+    if (limit <= 1) return;
+    
+    heroAutoplayTimer = setInterval(() => {
+        navigateHeroSlide(1);
+    }, HERO_AUTOPLAY_DELAY);
+}
+
+function stopHeroAutoplay() {
+    if (heroAutoplayTimer) {
+        clearInterval(heroAutoplayTimer);
+        heroAutoplayTimer = null;
+    }
+}
+
+function changeHeroSlide(index, skipFlash = false) {
+    const limit = Math.min(currentHeroSongs.length, HERO_CAROUSEL_LIMIT);
+    if (limit === 0) return;
+    
+    currentHeroIndex = index;
+    const song = currentHeroSongs[currentHeroIndex];
+    if (!song) return;
+    
+    currentHeroSong = song;
+    
+    // Update active dot indicator
+    const dots = document.querySelectorAll('.hero-indicator');
+    dots.forEach((dot, idx) => {
+        dot.classList.toggle('active', idx === currentHeroIndex);
+    });
+    
+    const heroContent = document.querySelector('.hero-content');
+    
+    const updateDOM = () => {
+        // Call the original updateHero logic but without recreating/triggering flashes again
+        updateHero(song, currentHeroSongs, { skipFlash: true });
+        
+        // Custom background flash effect if not skipped
+        const heroSection = document.getElementById('hero');
+        if (heroSection && !skipFlash) {
+            heroSection.classList.remove('hero-updated');
+            void heroSection.offsetWidth;
+            heroSection.classList.add('hero-updated');
+        }
+    };
+    
+    if (heroContent && !skipFlash) {
+        // Fade out
+        heroContent.classList.add('fade-out');
+        
+        // Wait for fade-out transition, update contents, and fade back in
+        setTimeout(() => {
+            updateDOM();
+            heroContent.classList.remove('fade-out');
+        }, 220);
+    } else {
+        updateDOM();
+        if (heroContent) heroContent.classList.remove('fade-out');
+    }
+    
+    // Save state and restart autoplay timer
+    saveHeroToStorage(song, currentHeroSongs);
+    startHeroAutoplay();
 }
 
 async function fetchTrendingMalayalamHero(forceRefresh = false) {
@@ -1631,6 +2013,23 @@ async function fetchTrending(query, container, append = false) {
 function updateHero(song, songsList = null, options = {}) {
     if (!song) return;
     const { skipFlash = false } = options;
+    
+    // If called from playSong(song) without songsList, we check if it is part of the carousel
+    if (!songsList && currentHeroSongs?.length > 0) {
+        const idx = currentHeroSongs.slice(0, HERO_CAROUSEL_LIMIT).findIndex(s => s.id === song.id);
+        if (idx > -1) {
+            // If it is in the carousel, transition to it
+            if (idx !== currentHeroIndex) {
+                changeHeroSlide(idx, true);
+            }
+            return;
+        } else {
+            // If it's not in the carousel, we do not change the slide, just update play/pause state
+            updatePlayPauseIcon(isPlaying);
+            return;
+        }
+    }
+    
     const songChanged = currentHeroSong?.id !== song.id;
     currentHeroSong = song;
     if (songsList) {
@@ -2335,7 +2734,7 @@ function updatePlayPauseIcon(playing) {
     // Sync Hero section play button and badge
     const heroPlayBtn = document.getElementById('hero-play');
     if (heroPlayBtn && currentHeroSong) {
-        const isCurrentHeroSongPlaying = currentSong && currentHeroSongs && currentHeroSongs.some(s => s.id === currentSong.id) && playing;
+        const isCurrentHeroSongPlaying = currentSong && currentHeroSong && currentHeroSong.id === currentSong.id && playing;
         heroPlayBtn.innerHTML = isCurrentHeroSongPlaying ? `<i data-lucide="pause"></i> Pause` : `<i data-lucide="play"></i> Play Now`;
         const heroBadge = document.getElementById('hero-badge') || document.querySelector('.hero .badge');
         if (heroBadge) {

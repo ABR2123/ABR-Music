@@ -126,12 +126,43 @@
                         <span class="badge hero-badge" id="hero-badge">
                             <span class="badge-pulse"></span> Trending Now
                         </span>
+                        <a class="yt-trending-badge" id="yt-trending-badge" href="https://www.youtube.com/feed/trending?bp=4gINGgt5dG1hX2NoYXJ0cw%3D%3D" target="_blank" rel="noopener noreferrer" title="View YouTube Music Charts">
+                            <svg class="yt-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                            <span>Trending on YouTube</span>
+                            <span class="yt-trend-month">June 2026</span>
+                        </a>
                         <p class="hero-label">Latest Malayalam Hits</p>
                         <h1 id="hero-song-title">Loading trending song…</h1>
                         <p id="hero-song-artist">Fetching the hottest Malayalam tracks of 2026</p>
                         <button class="play-btn-large" id="hero-play"><i data-lucide="play"></i> Play Now</button>
                     </div>
                     <div class="hero-bg-overlay"></div>
+                    <div class="hero-controls">
+                        <button class="hero-nav-btn prev" id="hero-prev" title="Previous Slide"><i data-lucide="chevron-left"></i></button>
+                        <div class="hero-indicators" id="hero-indicators"></div>
+                        <button class="hero-nav-btn next" id="hero-next" title="Next Slide"><i data-lucide="chevron-right"></i></button>
+                    </div>
+                </section>
+
+                <!-- ── YouTube Trending · June 2026 ── -->
+                <section class="music-section yt-trending-section" id="yt-trending-section">
+                    <div class="section-header yt-trending-header">
+                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                            <div class="yt-section-title">
+                                <svg class="yt-section-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                <h2>Trending on YouTube <span class="yt-month-chip">June 2026</span></h2>
+                            </div>
+                            <div class="yt-lang-tabs" id="yt-lang-tabs">
+                                <button class="yt-lang-tab active" id="yt-tab-all" onclick="filterYtTrending('all', this)">🔥 All</button>
+                                <button class="yt-lang-tab" id="yt-tab-ml" onclick="filterYtTrending('Malayalam', this)">🎵 Malayalam</button>
+                                <button class="yt-lang-tab" id="yt-tab-hi" onclick="filterYtTrending('Hindi', this)">🎶 Hindi</button>
+                                <button class="yt-lang-tab" id="yt-tab-ta" onclick="filterYtTrending('Tamil', this)">🎼 Tamil</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="horizontal-scroll" id="yt-trending-songs">
+                        <div class="loader-container"><div class="loader-spinner"></div></div>
+                    </div>
                 </section>
 
                 <section class="music-section">
@@ -172,7 +203,7 @@
                         </div>
                         <a href="javascript:void(0)" onclick="searchByLang('Malayalam')">See All</a>
                     </div>
-                    <div class="horizontal-scroll lazy-section" id="malayalam-songs" data-query="malayalam 2026">
+                    <div class="horizontal-scroll lazy-section" id="malayalam-songs" data-query="latest malayalam hits">
                         <div class="loader-container">
                             <div class="loader-spinner"></div>
                         </div>

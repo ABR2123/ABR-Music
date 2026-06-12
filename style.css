@@ -646,6 +646,82 @@ body {
     position: relative;
     z-index: 2;
     max-width: 600px;
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero-content.fade-out {
+    opacity: 0;
+    transform: translateY(12px);
+}
+
+/* Hero Slide Controls */
+.hero-controls {
+    position: absolute;
+    bottom: 30px;
+    right: 40px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 10;
+}
+
+.hero-nav-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.hero-nav-btn i {
+    width: 20px;
+    height: 20px;
+}
+
+.hero-nav-btn:hover {
+    background: var(--accent-color);
+    color: #000;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 15px rgba(255, 170, 0, 0.4);
+    transform: scale(1.05);
+}
+
+.hero-nav-btn:active {
+    transform: scale(0.95);
+}
+
+.hero-indicators {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.hero-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero-indicator:hover {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.hero-indicator.active {
+    width: 24px;
+    border-radius: 4px;
+    background: var(--accent-color);
+    box-shadow: 0 0 8px var(--accent-color);
 }
 
 .hero-label {
@@ -686,6 +762,62 @@ body {
     50% { opacity: 0.5; transform: scale(0.75); }
 }
 
+/* ── YouTube Trending Badge ── */
+.yt-trending-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 13px 5px 10px;
+    border-radius: 50px;
+    background: rgba(255, 0, 0, 0.15);
+    border: 1px solid rgba(255, 80, 80, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #ff6b6b;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    text-decoration: none;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
+    box-shadow: 0 2px 12px rgba(255, 0, 0, 0.18);
+    animation: yt-badge-glow 3s ease-in-out infinite;
+}
+
+.yt-trending-badge:hover {
+    background: rgba(255, 0, 0, 0.28);
+    border-color: rgba(255, 80, 80, 0.7);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(255, 0, 0, 0.3);
+    color: #ff8080;
+    text-decoration: none;
+}
+
+.yt-icon {
+    width: 15px;
+    height: 15px;
+    color: #ff4444;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 4px rgba(255, 50, 50, 0.6));
+}
+
+.yt-trend-month {
+    background: rgba(255, 60, 60, 0.25);
+    border-radius: 50px;
+    padding: 2px 8px;
+    font-size: 0.65rem;
+    letter-spacing: 0.5px;
+    color: #ffaaaa;
+    font-weight: 600;
+}
+
+@keyframes yt-badge-glow {
+    0%, 100% { box-shadow: 0 2px 12px rgba(255, 0, 0, 0.18); }
+    50% { box-shadow: 0 2px 20px rgba(255, 0, 0, 0.35); }
+}
+
 .hero.hero-updated {
     animation: hero-flash 0.5s ease;
 }
@@ -696,7 +828,155 @@ body {
     100% { box-shadow: var(--shadow-lg); }
 }
 
+/* ── YouTube Trending June 2026 Section ─────────────────────────────────────── */
+.yt-trending-section {
+    position: relative;
+}
+
+.yt-trending-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start !important;
+}
+
+.yt-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.yt-section-icon {
+    width: 22px;
+    height: 22px;
+    color: #ff4444;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 6px rgba(255, 50, 50, 0.5));
+}
+
+.yt-section-title h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.yt-month-chip {
+    display: inline-block;
+    background: rgba(255, 0, 0, 0.12);
+    border: 1px solid rgba(255, 80, 80, 0.35);
+    color: #ff7777;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 2px 10px;
+    border-radius: 50px;
+    vertical-align: middle;
+}
+
+/* Language filter tabs */
+.yt-lang-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.yt-lang-tab {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    border-radius: 50px;
+    padding: 5px 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.yt-lang-tab:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.yt-lang-tab.active {
+    background: rgba(255, 0, 0, 0.18);
+    border-color: rgba(255, 80, 80, 0.55);
+    color: #ff7777;
+    box-shadow: 0 0 12px rgba(255, 0, 0, 0.15);
+}
+
+/* Card overlay and thumbnail effects */
+.yt-card-thumb-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.yt-card-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px 12px 0 0;
+    transition: background 0.25s ease;
+}
+
+.yt-trend-card:hover .yt-card-overlay {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.yt-play-logo {
+    width: 36px;
+    height: 36px;
+    color: #fff;
+    opacity: 0;
+    transform: scale(0.7);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.6));
+}
+
+.yt-trend-card:hover .yt-play-logo {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* Language pill on card */
+.yt-lang-pill {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 50px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+/* YouTube view count badge */
+.yt-views-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    color: rgba(255,255,255,0.85);
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 50px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
 .hero h1 {
+
     font-family: 'Outfit', sans-serif;
     font-size: 4rem;
     line-height: 1.1;
@@ -1740,6 +2020,25 @@ input[type="range"]::-webkit-slider-thumb {
     .play-btn-large {
         padding: 12px 30px;
         font-size: 0.9rem;
+    }
+
+    /* Mobile Responsive Hero Controls */
+    .hero-controls {
+        right: 50%;
+        transform: translateX(50%);
+        bottom: 16px;
+        gap: 12px;
+    }
+    .hero-nav-btn {
+        width: 36px;
+        height: 36px;
+    }
+    .hero-indicator {
+        width: 6px;
+        height: 6px;
+    }
+    .hero-indicator.active {
+        width: 16px;
     }
     
     .yt-mini-player {
