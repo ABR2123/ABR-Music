@@ -18,6 +18,154 @@ let hasInitializedAudio = false; // Flag for iOS first interaction
 const canvas = document.getElementById('visualizer');
 const ctx = canvas.getContext('2d');
 
+// ─── Pure JS DES Decrypter for Client-Side GitHub Pages Fallback Mode ─────────
+function clientDesDecrypt(ciphertextBase64, keyStr = '38346591') {
+    try {
+        const IP = [58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4, 62, 54, 46, 38, 30, 22, 14, 6, 64, 56, 48, 40, 32, 24, 16, 8, 57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11, 3, 61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7];
+        const FP = [40, 8, 48, 16, 56, 24, 64, 32, 39, 7, 47, 15, 55, 23, 63, 31, 38, 6, 46, 14, 54, 22, 62, 30, 37, 5, 45, 13, 53, 21, 61, 29, 36, 4, 44, 12, 52, 20, 60, 28, 35, 3, 43, 11, 51, 19, 59, 27, 34, 2, 42, 10, 50, 18, 58, 26, 33, 1, 41, 9, 49, 17, 57, 25];
+        const E = [32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11, 12, 13, 12, 13, 14, 15, 16, 17, 16, 17, 18, 19, 20, 21, 20, 21, 22, 23, 24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1];
+        const P = [16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10, 2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25];
+        const S = [
+            [[14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7],[0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8],[4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0],[15, 12, 8, 2, 4, 9, 1, 7, 5, 11, 3, 14, 10, 0, 6, 13]],
+            [[15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10],[3, 13, 4, 7, 15, 2, 8, 14, 12, 0, 1, 10, 6, 9, 11, 5],[0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15],[13, 8, 10, 1, 3, 15, 4, 2, 11, 6, 7, 12, 0, 5, 14, 9]],
+            [[10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8],[13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1],[13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7],[1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12]],
+            [[7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15],[13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2, 12, 1, 10, 14, 9],[10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4],[3, 15, 0, 6, 10, 1, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14]],
+            [[2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9],[14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15, 10, 3, 9, 8, 6],[4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14],[11, 8, 12, 7, 1, 14, 2, 13, 6, 15, 0, 9, 10, 4, 5, 3]],
+            [[12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11],[10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13, 14, 0, 11, 3, 8],[9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6],[4, 3, 2, 12, 9, 5, 15, 10, 11, 14, 1, 7, 6, 0, 8, 13]],
+            [[4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1],[13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5, 12, 2, 15, 8, 6],[1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2],[6, 11, 13, 8, 1, 4, 10, 7, 9, 5, 0, 15, 14, 2, 3, 12]],
+            [[13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7],[1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6, 11, 0, 14, 9, 2],[7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8],[2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11]]
+        ];
+        const PC1 = [57, 49, 41, 33, 25, 17, 9, 1, 58, 50, 42, 34, 26, 18, 10, 2, 59, 51, 43, 35, 27, 19, 11, 3, 60, 52, 44, 36, 63, 55, 47, 39, 31, 23, 15, 7, 62, 54, 46, 38, 30, 22, 14, 6, 61, 53, 45, 37, 29, 21, 13, 5, 28, 20, 12, 4];
+        const PC2 = [14, 17, 11, 24, 1, 5, 3, 28, 15, 6, 21, 10, 23, 19, 12, 4, 26, 8, 16, 7, 27, 20, 13, 2, 41, 52, 31, 37, 47, 55, 30, 40, 51, 45, 33, 48, 44, 49, 39, 56, 34, 53, 46, 42, 50, 36, 29, 32];
+        const SHIFTS = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
+
+        function bytesToBits(bytes) {
+            const bits = [];
+            for (let i = 0; i < bytes.length; i++) for (let j = 7; j >= 0; j--) bits.push((bytes[i] >> j) & 1);
+            return bits;
+        }
+        function bitsToBytes(bits) {
+            const bytes = new Uint8Array(bits.length / 8);
+            for (let i = 0; i < bytes.length; i++) {
+                let b = 0;
+                for (let j = 0; j < 8; j++) b = (b << 1) | bits[i * 8 + j];
+                bytes[i] = b;
+            }
+            return bytes;
+        }
+        function permute(bits, table) { return table.map(pos => bits[pos - 1]); }
+        function xor(a, b) { return a.map((val, i) => val ^ b[i]); }
+        function generateSubkeys(keyBytes) {
+            const keyBits = bytesToBits(keyBytes);
+            const permutedKey = permute(keyBits, PC1);
+            let C = permutedKey.slice(0, 28), D = permutedKey.slice(28, 56);
+            const subkeys = [];
+            for (let i = 0; i < 16; i++) {
+                const shift = SHIFTS[i];
+                C = C.slice(shift).concat(C.slice(0, shift));
+                D = D.slice(shift).concat(D.slice(0, shift));
+                subkeys.push(permute(C.concat(D), PC2));
+            }
+            return subkeys;
+        }
+        function feistel(R, subkey) {
+            const expandedR = permute(R, E);
+            const xored = xor(expandedR, subkey);
+            const sOutput = [];
+            for (let i = 0; i < 8; i++) {
+                const block = xored.slice(i * 6, (i + 1) * 6);
+                const row = (block[0] << 1) | block[5];
+                const col = (block[1] << 3) | (block[2] << 2) | (block[3] << 1) | block[4];
+                const val = S[i][row][col];
+                for (let j = 3; j >= 0; j--) sOutput.push((val >> j) & 1);
+            }
+            return permute(sOutput, P);
+        }
+        function decryptBlock(blockBits, subkeys) {
+            const permutedBlock = permute(blockBits, IP);
+            let L = permutedBlock.slice(0, 32), R = permutedBlock.slice(32, 64);
+            for (let i = 15; i >= 0; i--) {
+                const nextL = R;
+                R = xor(L, feistel(R, subkeys[i]));
+                L = nextL;
+            }
+            return permute(R.concat(L), FP);
+        }
+
+        const keyBytes = new Uint8Array(8);
+        for (let i = 0; i < 8; i++) keyBytes[i] = keyStr.charCodeAt(i) || 0;
+        const subkeys = generateSubkeys(keyBytes);
+        const binaryStr = atob(ciphertextBase64);
+        const cipherBytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) cipherBytes[i] = binaryStr.charCodeAt(i);
+
+        const plainBits = [];
+        for (let i = 0; i < cipherBytes.length; i += 8) {
+            plainBits.push(...decryptBlock(bytesToBits(cipherBytes.slice(i, i + 8)), subkeys));
+        }
+        const decryptedBytes = bitsToBytes(plainBits);
+        const padLen = decryptedBytes[decryptedBytes.length - 1];
+        const unpaddedBytes = (padLen > 0 && padLen <= 8) ? decryptedBytes.slice(0, decryptedBytes.length - padLen) : decryptedBytes;
+        const decryptedStr = new TextDecoder().decode(unpaddedBytes);
+        return decryptedStr.replace(/_96\.mp4/, '_320.mp4').replace(/_96\.mp3/, '_320.mp3');
+    } catch (e) {
+        return '';
+    }
+}
+
+function mapClientSong(song) {
+    if (!song || (!song.id && !song.song && !song.title)) return null;
+    const enc = song.more_info?.encrypted_media_url || song.encrypted_media_url;
+    let url = '';
+    if (enc) {
+        url = clientDesDecrypt(enc);
+    }
+    if (!url && song.more_info?.media_preview_url) {
+        url = song.more_info.media_preview_url.replace('preview', 'aac').replace('_96_p', '_320');
+    }
+    if (!url && song.more_info?.vlink) {
+        url = song.more_info.vlink;
+    }
+
+    const image = song.image || song.more_info?.artistMap?.primary_artists?.[0]?.image || '';
+    const imageHd = image ? image.replace('150x150', '500x500') : '';
+    const primaryArtists = song.more_info?.primary_artists || song.primary_artists || song.singers || '';
+
+    return {
+        id: song.id || String(Math.random()),
+        name: song.song || song.title || song.name || 'Unknown Track',
+        title: song.song || song.title || song.name || 'Unknown Track',
+        album: { id: song.albumid || '', name: song.album || 'Single' },
+        artists: { primary: (song.more_info?.artistMap?.primary_artists || []).map(a => ({ id: a.id, name: a.name, image: a.image })) },
+        primaryArtists: primaryArtists,
+        singers: primaryArtists,
+        image: [{ url: image }, { url: image }, { url: imageHd || image }],
+        duration: parseInt(song.more_info?.duration || song.duration || 0),
+        downloadUrl: [{ url: url, quality: '320kbps' }],
+        isSaavn: true
+    };
+}
+
+async function directClientFetch(params) {
+    const url = new URL('https://www.jiosaavn.com/api.php');
+    const defaultParams = {
+        _format: 'json',
+        _marker: '0',
+        api_version: '4',
+        ctx: 'web6dot0',
+        ...params
+    };
+    Object.entries(defaultParams).forEach(([k, v]) => url.searchParams.set(k, v));
+    try {
+        const res = await fetch(url.toString());
+        return await res.json();
+    } catch (e) {
+        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url.toString());
+        const res = await fetch(proxyUrl);
+        return await res.json();
+    }
+}
+
 // ─── API Caching Utilities ───────────────────────────────────────────────────
 const apiCache = {
     search: {},
@@ -1044,16 +1192,31 @@ async function performSearch(query) {
     `;
     
     try {
-        const response = await fetch(`${currentApiBase}/search?query=${encodeURIComponent(query)}`);
-        const result = await response.json();
-        
+        let result;
+        try {
+            const response = await fetch(`${currentApiBase}/search?query=${encodeURIComponent(query)}`);
+            if (response.ok) {
+                result = await response.json();
+            }
+        } catch (e) {}
+
+        if (!result || !result.success || !result.data) {
+            console.log('[Search] Running client-side direct search...');
+            const rawData = await directClientFetch({ __call: 'search.getResults', q: query, N: '30', p: '1' });
+            const rawSongs = rawData.results || rawData.songs?.results || [];
+            const songs = rawSongs.map(mapClientSong).filter(Boolean);
+            result = {
+                success: true,
+                data: { songs: { results: songs }, albums: { results: [] }, playlists: { results: [] }, artists: { results: [] }, results: songs }
+            };
+        }
+
         if (result && result.success && result.data) {
             const results = result.data;
             const songsList = results.songs?.results || [];
             const albumsList = results.albums?.results || [];
             
             if (songsList.length === 0 && albumsList.length === 0) {
-                // Try local fallback
                 const localSongs = searchLocalBackup(query);
                 if (localSongs.length > 0) {
                     showToast("Showing local matches for: " + query, "info");
@@ -1362,9 +1525,20 @@ async function loadSpotifyTrendingSection(lang = 'all') {
     if (!spotifyTrendingCache[lang]) {
         container.innerHTML = '<div class="loader-container"><div class="loader-spinner"></div></div>';
         try {
-            const response = await fetch(`${currentApiBase}/trending/songs?lang=${encodeURIComponent(lang)}`);
-            const data = await response.json();
-            spotifyTrendingCache[lang] = parseTrendingResults(data);
+            let data;
+            try {
+                const response = await fetch(`${currentApiBase}/trending/songs?lang=${encodeURIComponent(lang)}`);
+                if (response.ok) data = await response.json();
+            } catch (err) {}
+
+            if (data && data.success && data.data) {
+                spotifyTrendingCache[lang] = parseTrendingResults(data);
+            } else {
+                console.log('[Trending] Running client-side direct trending fetch...');
+                const rawData = await directClientFetch({ __call: 'search.getResults', q: `${lang === 'all' ? 'indian' : lang} hits 2026`, N: '40', p: '1' });
+                const rawSongs = rawData.results || rawData.songs?.results || [];
+                spotifyTrendingCache[lang] = rawSongs.map(mapClientSong).filter(Boolean);
+            }
         } catch (e) {
             console.error('[Spotify Trending] Failed:', e);
             container.innerHTML = '<div class="error-state"><p>Could not load Spotify charts.</p></div>';

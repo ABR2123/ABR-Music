@@ -1,11 +1,10 @@
 {
   "version": 2,
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "server.js" },
-    { "source": "/(.*)", "destination": "/$1" }
+  "builds": [
+    { "src": "server.js", "use": "@vercel/node" }
   ],
-  "env": {
-    "SPOTIFY_CLIENT_ID": "800e94a93f4c44d7bb037ab33bf91b32",
-    "SPOTIFY_CLIENT_SECRET": "5daa88738ed14d88b9412cf1af810e29"
-  }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "server.js" },
+    { "src": "/(.*)", "dest": "/$1" }
+  ]
 }

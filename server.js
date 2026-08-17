@@ -630,9 +630,10 @@ function parseSaavnUrl(input) {
     return { type: typeMap[match[1]] || 'song', token };
 }
 
-// ─── HTTP Server ──────────────────────────────────────────────────────────────
-const server = http.createServer(async (req, res) => {
-    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+// ─── HTTP Server & Request Handler ────────────────────────────────────────────
+async function requestHandler(req, res) {
+    const host = req.headers.host || 'localhost';
+    const parsedUrl = new URL(req.url, `http://${host}`);
     const pathname = parsedUrl.pathname;
 
     try {
@@ -925,10 +926,16 @@ const server = http.createServer(async (req, res) => {
         console.error(`[API Error] ${pathname}:`, e.message);
         return json(res, 500, { success: false, message: e.message });
     }
-});
+}
 
-server.listen(PORT, () => {
-    console.log(`\n🎵 SaavnFlow Server running at http://localhost:${PORT}`);
-    console.log(`   Powered by JioSaavn API — Direct audio streaming & proxy active!`);
-    console.log(`   Open http://localhost:${PORT} in your browser.\n`);
-});
+const server = http.createServer(requestHandler);
+
+if (require.main === module) {
+    server.listen(PORT, () => {
+        console.log(`\n🎵 SaavnFlow Server running at http://localhost:${PORT}`);
+        console.log(`   Powered by JioSaavn API — Direct audio streaming & proxy active!`);
+        console.log(`   Open http://localhost:${PORT} in your browser.\n`);
+    });
+}
+
+module.exports = requestHandler;
