@@ -1,0 +1,8 @@
+node_modules/
+scratch/
+.env
+.DS_Store
+Thumbs.db
+178*.js
+temp_test*.js
+test_play.js
