@@ -276,7 +276,7 @@ function desDecryptECB(ciphertextBase64, keyStr = '38346591') {
         : decryptedBytes;
 
     const decryptedStr = Buffer.from(unpaddedBytes).toString('utf8');
-    return decryptedStr.replace(/_96\.mp4/, '_320.mp4').replace(/_96\.mp3/, '_320.mp3');
+    return decryptedStr.replace(/_(96|160|48)\.(mp4|mp3)/, '_320.$2');
 }
 
 /**
@@ -312,32 +312,45 @@ function mapSaavnSong(song) {
 
     const id = song.id || song.song_id || song.more_info?.song_id || String(Math.random());
 
+    // Declare primaryArtists early so it's available for the download URL builder below
+    const primaryArtists = song.more_info?.primary_artists || song.primary_artists || song.singers || song.more_info?.artistMap?.primary_artists?.map(a => a.name).join(', ') || '';
+
     const downloadUrls = [];
+    let directCdnUrl = '';
     const enc = song.more_info?.encrypted_media_url || song.encrypted_media_url;
     if (enc) {
         const decrypted = decryptSaavnUrl(enc);
         if (decrypted) {
-            // Provide direct CDN URL as primary quality
+            directCdnUrl = decrypted;
+            // Direct CDN URL as primary quality
             downloadUrls.push({ url: decrypted, quality: '320kbps' });
-            // Provide server stream proxy URL for 100% CORS & Range header support
+            // Direct 160kbps fallback
+            const url160 = decrypted.replace(/_320\.(mp4|mp3)/, '_160.$1');
+            if (url160 !== decrypted) {
+                downloadUrls.push({ url: url160, quality: '160kbps' });
+            }
+            // Server stream proxy URL for CORS & Range header support
             downloadUrls.push({ url: `/api/stream?url=${encodeURIComponent(decrypted)}`, quality: '320kbps' });
+            // Server direct download proxy
+            const songName = song.song || song.title || song.name || 'Song';
+            downloadUrls.push({ url: `/api/download?url=${encodeURIComponent(decrypted)}&name=${encodeURIComponent(songName)}&artist=${encodeURIComponent(primaryArtists || '')}`, quality: 'download' });
         }
     }
 
     if (song.more_info?.media_preview_url) {
         const previewUrl = song.more_info.media_preview_url.replace('preview', 'aac').replace('_96_p', '_320');
+        if (!directCdnUrl) directCdnUrl = previewUrl;
         downloadUrls.push({ url: previewUrl, quality: '320kbps' });
         downloadUrls.push({ url: `/api/stream?url=${encodeURIComponent(previewUrl)}`, quality: '320kbps' });
     }
 
     if (song.more_info?.vlink) {
+        if (!directCdnUrl) directCdnUrl = song.more_info.vlink;
         downloadUrls.push({ url: song.more_info.vlink, quality: '160kbps' });
     }
 
     const image = song.image || song.more_info?.artistMap?.primary_artists?.[0]?.image || '';
     const imageHd = hdImage(image);
-
-    const primaryArtists = song.more_info?.primary_artists || song.primary_artists || song.singers || song.more_info?.artistMap?.primary_artists?.map(a => a.name).join(', ') || '';
 
     return {
         id: id,
@@ -366,6 +379,7 @@ function mapSaavnSong(song) {
         language: song.language || song.more_info?.language || '',
         playCount: song.play_count || song.more_info?.play_count || 0,
         downloadUrl: downloadUrls,
+        rawMediaUrl: directCdnUrl,
         isSaavn: true,
         saavnUrl: song.perma_url || ''
     };
@@ -640,8 +654,9 @@ async function requestHandler(req, res) {
         if (req.method === 'OPTIONS') {
             res.writeHead(204, {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Range'
+                'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Range, Accept',
+                'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Disposition'
             });
             return res.end();
         }
@@ -819,36 +834,45 @@ async function requestHandler(req, res) {
         }
 
         // ── Stream proxy (for CORS & Range headers) ───────────────────────────
-        if (pathname === '/api/stream') {
+        if (pathname === '/api/stream' || pathname === '/api/stream-proxy') {
             const streamUrl = parsedUrl.searchParams.get('url');
             if (!streamUrl) {
-                res.writeHead(400);
+                res.writeHead(400, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
                 return res.end('Missing stream URL');
             }
 
             try {
+                const upstreamHeaders = { ...SAAVN_HEADERS };
+                if (req.headers['range']) {
+                    upstreamHeaders['Range'] = req.headers['range'];
+                }
+
                 const upstreamRes = await fetch(streamUrl, {
-                    headers: {
-                        ...SAAVN_HEADERS,
-                        'Range': req.headers['range'] || 'bytes=0-'
-                    }
+                    headers: upstreamHeaders
                 });
 
                 const status = upstreamRes.status;
-                const contentType = upstreamRes.headers.get('content-type') || 'audio/mpeg';
+                const contentType = upstreamRes.headers.get('content-type') || (streamUrl.includes('.mp4') ? 'audio/mp4' : 'audio/mpeg');
                 const contentLength = upstreamRes.headers.get('content-length');
                 const contentRange = upstreamRes.headers.get('content-range');
 
                 const headers = {
                     'Content-Type': contentType,
                     'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'public, max-age=3600',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Range, Accept',
+                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+                    'Cache-Control': 'public, max-age=86400',
                     'Accept-Ranges': 'bytes'
                 };
                 if (contentLength) headers['Content-Length'] = contentLength;
                 if (contentRange) headers['Content-Range'] = contentRange;
 
                 res.writeHead(status, headers);
+
+                if (req.method === 'HEAD') {
+                    return res.end();
+                }
 
                 req.on('close', () => {
                     if (upstreamRes.body && !upstreamRes.body.locked) {
@@ -870,8 +894,74 @@ async function requestHandler(req, res) {
                 return;
             } catch (e) {
                 console.error('[Stream] Proxy error:', e.message);
-                res.writeHead(500);
-                return res.end('Stream error');
+                res.writeHead(500, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+                return res.end('Stream error: ' + e.message);
+            }
+        }
+
+        // ── Download proxy (sets Content-Disposition for offline file download) ───
+        if (pathname === '/api/download') {
+            const streamUrl = parsedUrl.searchParams.get('url');
+            const songName = (parsedUrl.searchParams.get('name') || 'Song').trim();
+            const artistName = (parsedUrl.searchParams.get('artist') || '').trim();
+            
+            if (!streamUrl) {
+                res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                return res.end(JSON.stringify({ success: false, message: 'Missing stream URL' }));
+            }
+
+            try {
+                const upstreamRes = await fetch(streamUrl, {
+                    headers: SAAVN_HEADERS
+                });
+
+                if (!upstreamRes.ok) {
+                    throw new Error(`Upstream returned status ${upstreamRes.status}`);
+                }
+
+                let ext = 'mp4';
+                if (streamUrl.includes('.mp3')) ext = 'mp3';
+                else if (streamUrl.includes('.m4a')) ext = 'm4a';
+
+                const safeBase = `${songName}${artistName ? ' - ' + artistName : ''}`.replace(/[\\/:*?"<>|]/g, '_');
+                const filename = `${safeBase}.${ext}`;
+
+                const headers = {
+                    'Content-Type': upstreamRes.headers.get('content-type') || (ext === 'mp3' ? 'audio/mpeg' : 'audio/mp4'),
+                    'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length',
+                    'Cache-Control': 'public, max-age=86400'
+                };
+
+                const contentLength = upstreamRes.headers.get('content-length');
+                if (contentLength) headers['Content-Length'] = contentLength;
+
+                res.writeHead(200, headers);
+
+                req.on('close', () => {
+                    if (upstreamRes.body && !upstreamRes.body.locked) {
+                        try { upstreamRes.body.cancel(); } catch(e) {}
+                    }
+                });
+
+                const reader = upstreamRes.body.getReader();
+                const pump = async () => {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) { res.end(); break; }
+                        if (!res.write(value)) {
+                            await new Promise(r => res.once('drain', r));
+                        }
+                    }
+                };
+                pump().catch(() => res.destroy());
+                return;
+            } catch (e) {
+                console.error('[Download] Proxy error:', e.message);
+                res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+                return res.end(JSON.stringify({ success: false, message: e.message }));
             }
         }
 
